@@ -1,0 +1,72 @@
+name: CI — Tests & Playwright
+
+on:
+  push:
+    branches:
+      - main
+      - "orchids-feature-work"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: "ci-${{ github.ref }}"
+      cancel-in-progress: true
+
+    env:
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: node-mod-cache
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies (legacy peer-deps)
+        run: npm install --legacy-peer-deps
+        timeout-minutes: 10
+
+      - name: Ensure Playwright browsers are installed
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests (HTML reporter)
+        # playwright will start web server automatically using playwright.config.ts webServer block
+        run: npx playwright test --reporter=github --reporter=html
+        continue-on-error: false
+        timeout-minutes: 15
+
+      - name: Upload Playwright HTML report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+
+      - name: Upload test-results folder
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results
