@@ -1,23 +1,60 @@
 // src/components/SortableItem.tsx
 "use client";
+
 import React from "react";
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import {
+  useSortable,
+  UseSortableArguments,
+  defaultAnimateLayoutChanges,
+} from "@dnd-kit/sortable";
+import type { CSS } from "@dnd-kit/utilities";
 
-export function SortableItem({ id, children, columnId }: { id: string; children: React.ReactNode; columnId?: string }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
+type Props = {
+  id: string | number;
+  columnId?: string;
+  children: React.ReactNode;
+  className?: string;
+} & Partial<UseSortableArguments>;
+
+export function SortableItem({ id, columnId, children, className }: Props) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
     transition,
-    cursor: "grab",
-  } as React.CSSProperties;
+    isDragging,
+  } = useSortable({
+    id,
+    animateLayoutChanges: (args) => defaultAnimateLayoutChanges(args),
+  });
 
-  // expose column id for drag metadata
-  const dataAttr = { "data-column-id": columnId };
+  const style: React.CSSProperties & { "--translate-x"?: string; "--translate-y"?: string } = {
+    transform: transform
+      ? `translate3d(${(transform as CSS.Transform).x ?? 0}px, ${(transform as CSS.Transform).y ?? 0}px, 0) scale(${(transform as any)?.scale ?? 1})`
+      : undefined,
+    transition,
+    touchAction: "manipulation",
+    // pointer cursor when draggable
+    cursor: isDragging ? "grabbing" : "grab",
+  };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} data-column-id={columnId}>
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      data-draggable="true"
+      data-column-id={columnId}
+      data-draggable-id={String(id)}
+      role="button"
+      tabIndex={0}
+      className={className}
+      style={style}
+    >
       {children}
     </div>
   );
 }
+
+export default SortableItem;
