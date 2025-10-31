@@ -1,64 +1,82 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { files } from '@/db/schema';
+// src/app/api/upload/files/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "@/lib/supabaseClient";
+import { db } from "@/db";
+import { files } from "@/db/schema";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const uploadedById = formData.get('uploadedById') as string;
-    const institutionId = formData.get('institutionId') as string;
-    const folder = formData.get('folder') as string | null;
-    const visibility = formData.get('visibility') as string;
+    const file = formData.get("file") as File | null;
+    const uploadedByIdRaw = formData.get("uploadedById") as string | null;
+    const institutionIdRaw = formData.get("institutionId") as string | null;
+    const folder = (formData.get("folder") as string | null) || null;
+    const visibility = (formData.get("visibility") as string | null) || "all";
 
-    if (!file || !uploadedById || !institutionId || !visibility) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+    if (!file || !uploadedByIdRaw || !institutionIdRaw) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Validate visibility
-    if (!['all', 'team', 'guest'].includes(visibility)) {
-      return NextResponse.json(
-        { error: 'Invalid visibility value' },
-        { status: 400 }
-      );
+    const uploadedById = parseInt(uploadedByIdRaw, 10);
+    const institutionId = parseInt(institutionIdRaw, 10);
+
+    if (Number.isNaN(uploadedById) || Number.isNaN(institutionId)) {
+      return NextResponse.json({ error: "Invalid IDs" }, { status: 400 });
     }
 
-    // Validate file size (max 50MB)
-    if (file.size > 50 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: 'File size must be less than 50MB' },
-        { status: 400 }
-      );
+    // If Supabase not configured, fallback to base64 (dev)
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = buffer.toString("base64");
+      const dataUrl = `data:${file.type};base64,${base64}`;
+
+      const inserted = await db.insert(files).values({
+        name: file.name,
+        fileUrl: dataUrl,
+        fileType: file.type,
+        fileSize: file.size,
+        folder,
+        visibility,
+        uploadedById,
+        institutionId,
+        createdAt: new Date().toISOString(),
+      }).returning();
+
+      return NextResponse.json(inserted[0], { status: 201 });
     }
 
-    // Convert file to base64 data URL (fallback storage)
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64 = buffer.toString('base64');
-    const dataUrl = `data:${file.type};base64,${base64}`;
+    const fileBuf = Buffer.from(arrayBuffer);
+    const pathKey = `files/${institutionId}/${Date.now()}_${file.name}`;
 
-    // Insert file record
-    const newFile = await db.insert(files).values({
+    const { data, error: uploadError } = await supabase.storage.from("files").upload(pathKey, fileBuf, {
+      contentType: file.type,
+      upsert: true,
+    });
+
+    if (uploadError) {
+      console.error("Supabase file upload error:", uploadError);
+      return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    }
+
+    // Save DB record with storage path
+    const inserted = await db.insert(files).values({
       name: file.name,
-      fileUrl: dataUrl,
+      fileUrl: null,
       fileType: file.type,
       fileSize: file.size,
-      folder: folder || null,
+      folder,
       visibility,
-      uploadedById: parseInt(uploadedById),
-      institutionId: parseInt(institutionId),
+      uploadedById,
+      institutionId,
+      storagePath: data.path,
       createdAt: new Date().toISOString(),
     }).returning();
 
-    return NextResponse.json(newFile[0], { status: 201 });
-  } catch (error) {
-    console.error('File upload error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json(inserted[0], { status: 201 });
+  } catch (err) {
+    console.error("File upload error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

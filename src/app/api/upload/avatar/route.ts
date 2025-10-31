@@ -1,72 +1,68 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { users } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+// src/app/api/upload/avatar/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "@/lib/supabaseClient";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const userId = formData.get('userId') as string;
+    const file = formData.get("file") as File | null;
+    const userIdRaw = formData.get("userId") as string | null;
 
-    if (!file || !userId) {
-      return NextResponse.json(
-        { error: 'File and userId are required' },
-        { status: 400 }
-      );
+    if (!file || !userIdRaw) {
+      return NextResponse.json({ error: "File and userId are required" }, { status: 400 });
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      return NextResponse.json(
-        { error: 'Only image files are allowed' },
-        { status: 400 }
-      );
+    const userId = parseInt(userIdRaw, 10);
+    if (Number.isNaN(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
     }
 
-    // Validate file size (max 5MB)
+    if (!file.type.startsWith("image/")) {
+      return NextResponse.json({ error: "Only image files allowed" }, { status: 400 });
+    }
+
     if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: 'File size must be less than 5MB' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "File must be < 5MB" }, { status: 400 });
     }
 
-    // Convert to base64 data URL (fallback storage strategy)
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+      // fallback: store base64 in DB (dev)
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = buffer.toString("base64");
+      const dataUrl = `data:${file.type};base64,${base64}`;
+
+      await db.update(users).set({ avatarUrl: dataUrl }).where(eq(users.id, userId));
+      return NextResponse.json({ avatarUrl: dataUrl, message: "Avatar stored as base64 (dev)" }, { status: 200 });
+    }
+
+    // Upload to Supabase Storage
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64 = buffer.toString('base64');
-    const dataUrl = `data:${file.type};base64,${base64}`;
+    const fileBuf = Buffer.from(arrayBuffer);
+    const key = `avatars/${userId}/${Date.now()}_${file.name}`;
 
-    // Update user avatar
-    const updatedUser = await db
-      .update(users)
-      .set({ 
-        avatarUrl: dataUrl,
-        updatedAt: new Date().toISOString()
-      })
-      .where(eq(users.id, parseInt(userId)))
-      .returning();
+    const { data, error: uploadError } = await supabase.storage.from("avatars").upload(key, fileBuf, {
+      contentType: file.type,
+      upsert: true,
+    });
 
-    if (updatedUser.length === 0) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+    if (uploadError) {
+      console.error("Supabase avatar upload error:", uploadError);
+      return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
 
-    return NextResponse.json(
-      { 
-        avatarUrl: dataUrl,
-        message: 'Avatar uploaded successfully' 
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error('Avatar upload error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(data.path);
+    const publicUrl = publicData.publicUrl;
+
+    // Persist to DB
+    await db.update(users).set({ avatarUrl: publicUrl }).where(eq(users.id, userId));
+
+    return NextResponse.json({ avatarUrl: publicUrl, message: "Avatar uploaded" }, { status: 200 });
+  } catch (err) {
+    console.error("avatar upload error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

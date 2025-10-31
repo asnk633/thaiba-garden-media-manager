@@ -1,4 +1,5 @@
-'use client';
+// src/app/tasks/page.tsx
+"use client";
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,12 +8,44 @@ import { Task, User } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Grid3x3, LayoutList, Calendar as CalendarIcon, Filter, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+
+// dnd-kit imports
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+// small mapping utilities for column ids
+const STATUS_COLUMN_IDS = ["todo", "inprogress", "review", "done"];
+function mapStatusToColumnId(status: string) {
+  switch (status) {
+    case "pending":
+    case "todo":
+      return "todo";
+    case "in_progress":
+    case "inprogress":
+      return "inprogress";
+    case "review":
+      return "review";
+    case "done":
+    case "completed":
+      return "done";
+    default:
+      return "todo";
+  }
+}
 
 export default function TasksPage() {
   const { user } = useAuth();
@@ -32,6 +65,7 @@ export default function TasksPage() {
     }
     fetchTasks();
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, router]);
 
   const fetchTasks = async () => {
@@ -78,6 +112,7 @@ export default function TasksPage() {
       if (user) fetchTasks();
     }, 300);
     return () => clearTimeout(debounce);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, statusFilter, priorityFilter]);
 
   const getUserName = (userId: number | null) => {
@@ -106,16 +141,17 @@ export default function TasksPage() {
     }
   };
 
+  // Existing TaskCard kept intact (navigates to task detail)
   const TaskCard = ({ task }: { task: Task }) => (
-    <Card 
+    <Card
       className="hover:shadow-md transition-shadow cursor-pointer"
       onClick={() => router.push(`/tasks/${task.id}`)}
     >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base line-clamp-2">{task.title}</CardTitle>
-          <Badge className={getPriorityColor(task.priority)}>
-            {task.priority}
+          <Badge className={getPriorityColor((task as any).priority || 'low')}>
+            {(task as any).priority || 'low'}
           </Badge>
         </div>
       </CardHeader>
@@ -130,43 +166,113 @@ export default function TasksPage() {
             {task.status.replace('_', ' ')}
           </Badge>
           <span className="text-muted-foreground">
-            {getUserName(task.assignedToId)}
+            {getUserName((task as any).assignedToId ?? (task as any).assignedTo)}
           </span>
         </div>
-        {task.dueDate && (
+        {(task as any).dueDate && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <CalendarIcon className="h-3 w-3" />
-            {new Date(task.dueDate).toLocaleDateString()}
+            {new Date((task as any).dueDate).toLocaleDateString()}
           </div>
         )}
       </CardContent>
     </Card>
   );
 
-  const KanbanColumn = ({ status, title }: { status: string; title: string }) => {
-    const columnTasks = tasks.filter(t => t.status === status);
-    return (
-      <div className="flex-1 min-w-[280px]">
-        <div className="bg-muted/50 rounded-lg p-3 mb-3">
-          <h3 className="font-semibold flex items-center justify-between">
-            {title}
-            <Badge variant="secondary">{columnTasks.length}</Badge>
-          </h3>
-        </div>
-        <div className="space-y-3">
-          {columnTasks.map(task => (
-            <TaskCard key={task.id} task={task} />
-          ))}
-          {columnTasks.length === 0 && (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              No tasks
-            </div>
-          )}
-        </div>
-      </div>
-    );
+  // ----------------------------
+  // Kanban drag & drop helpers
+  // ----------------------------
+
+  // Build columns data from tasks
+  const buildColumns = (): Record<string, Task[]> => {
+    const grouped: Record<string, Task[]> = { todo: [], inprogress: [], review: [], done: [] };
+    tasks.forEach((t) => {
+      const col = mapStatusToColumnId(t.status || (t as any).status);
+      grouped[col] = grouped[col] || [];
+      grouped[col].push(t);
+    });
+    return grouped;
   };
 
+  const [columns, setColumns] = useState<Record<string, Task[]>>(buildColumns());
+  useEffect(() => {
+    setColumns(buildColumns());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
+
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  // local SortableItem component (so there's no extra file dependency)
+  function SortableItem({ id, children, columnId }: { id: string; children: React.ReactNode; columnId: string }) {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id, data: { columnId } });
+    const style: React.CSSProperties = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      cursor: "grab",
+    };
+
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners} data-column-id={columnId}>
+        {children}
+      </div>
+    );
+  }
+
+  const onDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const fromColId = active.data?.current?.columnId as string | undefined;
+    const toColId = over.data?.current?.columnId as string | undefined;
+
+    if (!fromColId || !toColId) return;
+    if (fromColId === toColId) return;
+
+    const movingTaskId = parseInt(String(active.id), 10);
+    const prevState = JSON.parse(JSON.stringify(columns));
+
+    const taskToMove = columns[fromColId].find((t) => t.id === movingTaskId);
+    if (!taskToMove) return;
+
+    // Optimistic update
+    setColumns((cols) => {
+      const newCols = { ...cols };
+      newCols[fromColId] = newCols[fromColId].filter((t) => t.id !== movingTaskId);
+      newCols[toColId] = [{ ...taskToMove, status: toColId }, ...newCols[toColId]];
+      return newCols;
+    });
+
+    try {
+      const patchStatusMap: Record<string, string> = {
+        todo: "todo",
+        inprogress: "in_progress",
+        review: "review",
+        done: "done",
+      };
+      const newStatus = patchStatusMap[toColId] || "todo";
+
+      const res = await fetch(`/api/tasks/${movingTaskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) throw new Error("Server update failed");
+
+      toast.success("Task moved");
+      // Optionally refresh tasks from server for canonical state:
+      // await fetchTasks();
+    } catch (err) {
+      // rollback
+      setColumns(prevState);
+      toast.error("Failed to move task. Reverting.");
+      console.error("Kanban move error:", err);
+    }
+  };
+
+  // ----------------------------
+  // Render
+  // ----------------------------
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -179,6 +285,41 @@ export default function TasksPage() {
       </div>
     );
   }
+
+  // Existing Kanban column UI adapted for dnd-kit when view === 'kanban'
+  const KanbanColumn = ({ status, title, columnId }: { status: string; title: string; columnId: string }) => {
+    const columnTasks = columns[columnId] || [];
+    return (
+      <div className="flex-1 min-w-[280px]">
+        <div className="bg-muted/50 rounded-lg p-3 mb-3">
+          <h3 className="font-semibold flex items-center justify-between">
+            {title}
+            <Badge variant="secondary">{columnTasks.length}</Badge>
+          </h3>
+        </div>
+
+        <SortableContext items={columnTasks.map((t) => String(t.id))} strategy={verticalListSortingStrategy}>
+          <div className="space-y-3">
+            {columnTasks.map(task => (
+              <SortableItem key={task.id} id={String(task.id)} columnId={columnId}>
+                <div className="p-3 bg-card rounded mb-2 shadow-sm">
+                  <div className="text-sm font-medium">{task.title}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-2">
+                    {task.description}
+                  </div>
+                </div>
+              </SortableItem>
+            ))}
+            {columnTasks.length === 0 && (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                No tasks
+              </div>
+            )}
+          </div>
+        </SortableContext>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -262,12 +403,15 @@ export default function TasksPage() {
           ))}
         </div>
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          <KanbanColumn status="todo" title="To Do" />
-          <KanbanColumn status="in_progress" title="In Progress" />
-          <KanbanColumn status="review" title="Review" />
-          <KanbanColumn status="done" title="Done" />
-        </div>
+        // Kanban view with DnD
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            <KanbanColumn status="todo" title="To Do" columnId="todo" />
+            <KanbanColumn status="in_progress" title="In Progress" columnId="inprogress" />
+            <KanbanColumn status="review" title="Review" columnId="review" />
+            <KanbanColumn status="done" title="Done" columnId="done" />
+          </div>
+        </DndContext>
       )}
     </div>
   );
