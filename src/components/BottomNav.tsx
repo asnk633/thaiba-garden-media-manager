@@ -2,13 +2,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation"; // 1. Imported useRouter
 import { useState } from "react";
 
 type Role = "admin" | "team" | "guest";
 
 export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
   const pathname = usePathname();
+  const { push } = useRouter(); // 2. Initialized useRouter
   const [fabOpen, setFabOpen] = useState(false);
   const [role] = useState<Role>("admin"); // TODO: wire to real auth
 
@@ -56,9 +57,41 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
         <>
           <div className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm" onClick={() => setFabOpen(false)} />
           <div className="fixed bottom-[150px] left-0 right-0 z-50 mx-auto flex max-w-sm flex-col items-center gap-2">
-            {role !== "guest" && <MenuBtn label="Create Event" onClick={() => {}} />}
-            <MenuBtn label="Create Task" onClick={() => {}} />
-            {role === "admin" && <MenuBtn label="Create Notification" onClick={() => {}} />}
+            {role !== "guest" && (
+              <MenuBtn
+                label="Create Event"
+                onClick={() => {
+                  // TODO: Implement
+                  setFabOpen(false);
+                }}
+              />
+            )}
+            <MenuBtn
+              label="Create Task"
+              onClick={() => {
+                // TODO: Implement
+                setFabOpen(false);
+              }}
+            />
+            {role === "admin" && (
+              <MenuBtn
+                label="Create Notification"
+                onClick={() => {
+                  // TODO: Implement
+                  setFabOpen(false);
+                }}
+              />
+            )}
+            {/* 3. Added Reports button for admin */}
+            {role === "admin" && (
+              <MenuBtn
+                label="Reports"
+                onClick={() => {
+                  push("/reports");
+                  setFabOpen(false);
+                }}
+              />
+            )}
             {role === "guest" && (
               <p className="text-xs text-white/70">Admin will assign a team member after submission.</p>
             )}
