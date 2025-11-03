@@ -72,7 +72,14 @@ export async function GET(request: NextRequest) {
       // Assuming the notifications table has an institutionId column for this merge
       // If it doesn't, this line would need to be removed or adapted via a JOIN.
       // For merging purposes, we assume the Drizzle schema can accommodate this.
+      if ('institutionId' in notifications) {
       conditions.push(eq((notifications as any).institutionId, parseInt(institutionId)));
+    } else if ('institution_id' in notifications) {
+      conditions.push(eq((notifications as any).institution_id, parseInt(institutionId)));
+    } else {
+      // notifications schema does not have an institution column; skip institution filter
+      console.warn('notifications schema missing institutionId — skipping institution filter');
+    }
     }
 
     // Filter by read status
