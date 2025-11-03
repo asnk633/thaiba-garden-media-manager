@@ -6,10 +6,11 @@ import type { Task } from "../../_lib/store";
  * GET /api/tasks/:id
  */
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
-  const row = db.tasks.get(params.id);
+  const { id } = await context.params;
+  const row = db.tasks.get(id);
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ data: row }, { status: 200 });
 }
