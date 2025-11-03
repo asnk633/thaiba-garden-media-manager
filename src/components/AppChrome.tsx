@@ -2,7 +2,6 @@
 
 import { usePathname } from "next/navigation";
 import BottomNav from "@/components/BottomNav";
-import FloatingActionButton from "@/components/FloatingActionButton";
 import { useAuth } from "@/hooks/useAuth";
 
 /**
@@ -37,7 +36,6 @@ export default function AppChrome() {
         "
       >
         <BottomNav className="pointer-events-auto" />
-        <FloatingActionButton className="pointer-events-auto" />
       </div>
     </>
   );
