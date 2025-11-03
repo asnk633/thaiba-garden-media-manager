@@ -1,44 +1,21 @@
-import type { Metadata } from "next";
+// src/app/layout.tsx
 import "./globals.css";
-// removed VisualEditsMessenger import (dev-only)
-import ErrorReporter from "@/components/ErrorReporter";
-import Script from "next/script";
-import { AuthProvider } from "@/contexts/AuthContext";
-import { ThemeProvider } from "@/contexts/ThemeContext";
-import { Toaster } from "@/components/ui/sonner";
-import { AppLayout } from "@/components/AppLayout";
+// If your project has a shared stylesheet from earlier work, keep this too:
+import "@/index.css"; // ← if this file exists in your repo; otherwise remove this line.
 
-export const metadata: Metadata = {
-  title: "Thaiba Garden Media Manager",
-  description: "Manage your media projects with ease",
-};
+export const metadata = { title: "Thaiba Garden Media Manager" };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">
-        <ThemeProvider>
-          <AuthProvider>
-            <ErrorReporter />
-            <Script
-              src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/scripts//route-messenger.js"
-              strategy="afterInteractive"
-              data-target-origin="*"
-              data-message-type="ROUTE_CHANGE"
-              data-include-search-params="true"
-              data-only-in-iframe="true"
-              data-debug="true"
-              data-custom-data='{"appName": "YourApp", "version": "1.0.0", "greeting": "hi"}'
-            />
-            <AppLayout>{children}</AppLayout>
-            <Toaster />
-            {/* VisualEditsMessenger removed — it was a dev-only helper not present locally */}
-          </AuthProvider>
-        </ThemeProvider>
+    <html lang="en">
+      <head>
+        <link
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="bg-gradient-to-b from-[var(--tg-bg-from)] to-[var(--tg-bg-to)] text-white antialiased">
+        {children}
       </body>
     </html>
   );

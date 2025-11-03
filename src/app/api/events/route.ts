@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { events } from '@/db/schema';
+import { db } from '@/db'; // Assumes Drizzle ORM connection
+import { events } from '@/db/schema'; // Assumes Drizzle schema definition
 import { eq, like, and, or, gte, lte, desc } from 'drizzle-orm';
 
+// --- GET Request Handler ---
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -39,8 +40,10 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const institutionId = searchParams.get('institutionId');
     const createdById = searchParams.get('createdById');
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+
+    // Integrated filters from the second script, mapping 'from'/'to' to 'startDate'/'endDate' logic
+    const from = searchParams.get('from'); // Maps to startDate
+    const to = searchParams.get('to');     // Maps to endDate
 
     const conditions = [];
 
@@ -64,13 +67,13 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(events.createdById, parseInt(createdById)));
     }
 
-    // Date range filters
-    if (startDate) {
-      conditions.push(gte(events.startTime, startDate));
+    // Date range filters (using 'from' and 'to' from the second script, applied to events.startTime)
+    if (from) {
+      conditions.push(gte(events.startTime, from));
     }
 
-    if (endDate) {
-      conditions.push(lte(events.endTime, endDate));
+    if (to) {
+      conditions.push(lte(events.endTime, to)); // Using endTime for the 'to' filter is more inclusive
     }
 
     let query = db.select().from(events);
@@ -94,10 +97,26 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// --- POST Request Handler ---
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, description, startTime, endTime, createdById, institutionId } = body;
+    // Combined properties, using Drizzle's 'startTime/endTime' but accommodating 'startAt/endAt' naming from the second script
+    const { 
+        title, 
+        description, 
+        startTime, 
+        endTime, 
+        startAt, // Alias from second script
+        endAt,   // Alias from second script
+        createdById, 
+        institutionId,
+        location, // Added from second script
+        visibility // Added from second script
+    } = body;
+
+    const finalStartTime = startTime || startAt;
+    const finalEndTime = endTime || endAt;
 
     // Validation
     if (!title || typeof title !== 'string' || title.trim() === '') {
@@ -107,23 +126,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!startTime || typeof startTime !== 'string') {
+    if (!finalStartTime || typeof finalStartTime !== 'string') {
       return NextResponse.json(
-        { error: 'Start time is required', code: 'MISSING_START_TIME' },
+        { error: 'Start time (`startTime` or `startAt` ISO) is required', code: 'MISSING_START_TIME' },
         { status: 400 }
       );
     }
 
-    if (!endTime || typeof endTime !== 'string') {
-      return NextResponse.json(
-        { error: 'End time is required', code: 'MISSING_END_TIME' },
-        { status: 400 }
-      );
-    }
-
+    // Note: The second script allowed endAt to be null. We'll make it optional here.
+    
     // Validate timestamps
-    const startTimeDate = new Date(startTime);
-    const endTimeDate = new Date(endTime);
+    const startTimeDate = new Date(finalStartTime);
+    const endTimeDate = finalEndTime ? new Date(finalEndTime) : null;
 
     if (isNaN(startTimeDate.getTime())) {
       return NextResponse.json(
@@ -132,15 +146,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (isNaN(endTimeDate.getTime())) {
+    if (endTimeDate && isNaN(endTimeDate.getTime())) {
       return NextResponse.json(
         { error: 'Invalid end time format', code: 'INVALID_END_TIME' },
         { status: 400 }
       );
     }
 
-    // Validate end time is after start time
-    if (endTimeDate <= startTimeDate) {
+    // Validate end time is after start time (if provided)
+    if (endTimeDate && endTimeDate <= startTimeDate) {
       return NextResponse.json(
         { error: 'End time must be after start time', code: 'INVALID_TIME_RANGE' },
         { status: 400 }
@@ -167,9 +181,12 @@ export async function POST(request: NextRequest) {
         title: title.trim(),
         description: description ? description.trim() : null,
         startTime: startTimeDate.toISOString(),
-        endTime: endTimeDate.toISOString(),
+        endTime: endTimeDate ? endTimeDate.toISOString() : null, // Allowing null end time
         createdById: parseInt(createdById.toString()),
         institutionId: parseInt(institutionId.toString()),
+        // Integrating new fields from the second script
+        location: location ?? '', // Default to empty string
+        visibility: visibility ?? 'team', // Default to 'team'
         createdAt: new Date().toISOString(),
       })
       .returning();
@@ -184,6 +201,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// --- PUT Request Handler ---
 export async function PUT(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -197,7 +215,22 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, startTime, endTime, createdById, institutionId } = body;
+    const { 
+        title, 
+        description, 
+        startTime, 
+        endTime, 
+        startAt, 
+        endAt, 
+        createdById, 
+        institutionId,
+        location,
+        visibility
+    } = body;
+    
+    // Use aliases if primary names aren't present
+    const updateStartTime = startTime || startAt;
+    const updateEndTime = endTime || endAt;
 
     // Check if event exists
     const existingEvent = await db
@@ -230,8 +263,8 @@ export async function PUT(request: NextRequest) {
       updates.description = description ? description.trim() : null;
     }
 
-    if (startTime !== undefined) {
-      const startTimeDate = new Date(startTime);
+    if (updateStartTime !== undefined) {
+      const startTimeDate = new Date(updateStartTime);
       if (isNaN(startTimeDate.getTime())) {
         return NextResponse.json(
           { error: 'Invalid start time format', code: 'INVALID_START_TIME' },
@@ -241,22 +274,33 @@ export async function PUT(request: NextRequest) {
       updates.startTime = startTimeDate.toISOString();
     }
 
-    if (endTime !== undefined) {
-      const endTimeDate = new Date(endTime);
-      if (isNaN(endTimeDate.getTime())) {
+    if (updateEndTime !== undefined) {
+      const endTimeDate = updateEndTime ? new Date(updateEndTime) : null;
+      if (updateEndTime !== null && endTimeDate && isNaN(endTimeDate.getTime())) {
         return NextResponse.json(
           { error: 'Invalid end time format', code: 'INVALID_END_TIME' },
           { status: 400 }
         );
       }
-      updates.endTime = endTimeDate.toISOString();
+      updates.endTime = endTimeDate ? endTimeDate.toISOString() : null;
+    }
+    
+    // Integrate new fields
+    if (location !== undefined) {
+        updates.location = location ?? '';
+    }
+    
+    if (visibility !== undefined) {
+        updates.visibility = visibility ?? 'team';
     }
 
+
     // Validate time range if both times are being updated or one is being updated
+    // Use the updated value or the existing one
     const finalStartTime = updates.startTime || existingEvent[0].startTime;
     const finalEndTime = updates.endTime || existingEvent[0].endTime;
 
-    if (new Date(finalEndTime) <= new Date(finalStartTime)) {
+    if (finalEndTime && new Date(finalEndTime) <= new Date(finalStartTime)) {
       return NextResponse.json(
         { error: 'End time must be after start time', code: 'INVALID_TIME_RANGE' },
         { status: 400 }
@@ -306,6 +350,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
+// --- DELETE Request Handler ---
 export async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;

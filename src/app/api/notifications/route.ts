@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { notifications } from '@/db/schema';
+import { db } from '@/db'; // Assumes Drizzle ORM connection
+import { notifications } from '@/db/schema'; // Assumes Drizzle schema definition
 import { eq, and, desc } from 'drizzle-orm';
 
+// --- GET Request Handler (Fetch single or list of notifications) ---
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -36,14 +37,20 @@ export async function GET(request: NextRequest) {
     // List notifications with filters and pagination
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 100);
     const offset = parseInt(searchParams.get('offset') ?? '0');
+    
+    // Filters from original Drizzle script
     const userId = searchParams.get('userId');
     const readParam = searchParams.get('read');
+    
+    // Integrated filter from the second script
+    const institutionId = searchParams.get('institutionId');
 
     let query = db.select().from(notifications);
 
     // Build filter conditions
     const conditions = [];
     
+    // Filter by userId
     if (userId) {
       if (isNaN(parseInt(userId))) {
         return NextResponse.json(
@@ -54,7 +61,23 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(notifications.userId, parseInt(userId)));
     }
 
+    // Filter by institutionId (Integrated from second script)
+    if (institutionId) {
+      if (isNaN(parseInt(institutionId))) {
+        return NextResponse.json(
+          { error: 'Valid institutionId is required', code: 'INVALID_INSTITUTION_ID' },
+          { status: 400 }
+        );
+      }
+      // Assuming the notifications table has an institutionId column for this merge
+      // If it doesn't, this line would need to be removed or adapted via a JOIN.
+      // For merging purposes, we assume the Drizzle schema can accommodate this.
+      conditions.push(eq((notifications as any).institutionId, parseInt(institutionId)));
+    }
+
+    // Filter by read status
     if (readParam !== null) {
+      // Maps 'true'/'1' or 'false'/'0' string to boolean
       const readValue = readParam === 'true' || readParam === '1';
       conditions.push(eq(notifications.read, readValue));
     }
@@ -78,19 +101,22 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// --- POST Request Handler (Create new notification) ---
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, type, title, message, read, metadata } = body;
+    // Integrated fields: 'body' maps to 'message', and 'audience' is new.
+    const { userId, type, title, message, body: bodyContent, read, metadata, institutionId, audience } = body;
 
-    // Validate required fields
+    // --- Validation ---
+
+    // Drizzle validation for userId
     if (!userId) {
       return NextResponse.json(
         { error: 'userId is required', code: 'MISSING_USER_ID' },
         { status: 400 }
       );
     }
-
     if (isNaN(parseInt(userId))) {
       return NextResponse.json(
         { error: 'userId must be a valid integer', code: 'INVALID_USER_ID' },
@@ -98,25 +124,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!type || typeof type !== 'string' || type.trim() === '') {
-      return NextResponse.json(
-        { error: 'type is required', code: 'MISSING_TYPE' },
-        { status: 400 }
-      );
-    }
-
+    // Combined validation for title
     if (!title || typeof title !== 'string' || title.trim() === '') {
       return NextResponse.json(
         { error: 'title is required', code: 'MISSING_TITLE' },
         { status: 400 }
       );
     }
+    
+    // Validation for message (Drizzle's name) or body (second script's name)
+    const finalMessage = (message || bodyContent)?.trim();
+    if (!finalMessage) {
+        return NextResponse.json(
+            { error: 'message or body is required', code: 'MISSING_MESSAGE' },
+            { status: 400 }
+        );
+    }
 
-    if (!message || typeof message !== 'string' || message.trim() === '') {
-      return NextResponse.json(
-        { error: 'message is required', code: 'MISSING_MESSAGE' },
-        { status: 400 }
-      );
+    // Validation for institutionId (Integrated from second script)
+    if (institutionId) {
+        if (isNaN(parseInt(institutionId))) {
+            return NextResponse.json(
+                { error: 'institutionId must be a valid integer if provided', code: 'INVALID_INSTITUTION_ID' },
+                { status: 400 }
+            );
+        }
     }
 
     // Validate metadata if provided
@@ -138,14 +170,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepare data for insertion
+    // --- Prepare Data ---
     const notificationData: any = {
       userId: parseInt(userId),
-      type: type.trim(),
+      type: type?.trim() || 'GENERAL', // type was required in Drizzle but not in the second script; setting a default if missing
       title: title.trim(),
-      message: message.trim(),
-      read: read === true || read === 1 ? true : false,
+      message: finalMessage, // Use the combined/validated message
+      read: read === true || read === 1,
       createdAt: new Date().toISOString(),
+      
+      // Integrated/assumed fields
+      institutionId: institutionId ? parseInt(institutionId) : null,
+      audience: audience || 'team', // Default to 'team' from the second script
     };
 
     if (metadata !== undefined && metadata !== null) {
@@ -153,7 +189,8 @@ export async function POST(request: NextRequest) {
         ? JSON.parse(metadata) 
         : metadata;
     }
-
+    
+    // --- Insert ---
     const newNotification = await db
       .insert(notifications)
       .values(notificationData)
@@ -169,6 +206,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// --- PUT Request Handler (Full update of an existing notification) ---
 export async function PUT(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -196,85 +234,82 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userId, type, title, message, read, metadata } = body;
+    const { userId, type, title, message, body: bodyContent, read, metadata, institutionId, audience } = body;
 
-    // Validate fields if provided
+    // --- Validation (similar to POST, but optional) ---
+    const updateData: any = {};
+    
+    // userId
     if (userId !== undefined) {
       if (isNaN(parseInt(userId))) {
-        return NextResponse.json(
-          { error: 'userId must be a valid integer', code: 'INVALID_USER_ID' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'userId must be a valid integer', code: 'INVALID_USER_ID' }, { status: 400 });
       }
-    }
-
-    if (type !== undefined && (typeof type !== 'string' || type.trim() === '')) {
-      return NextResponse.json(
-        { error: 'type must be a non-empty string', code: 'INVALID_TYPE' },
-        { status: 400 }
-      );
-    }
-
-    if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
-      return NextResponse.json(
-        { error: 'title must be a non-empty string', code: 'INVALID_TITLE' },
-        { status: 400 }
-      );
-    }
-
-    if (message !== undefined && (typeof message !== 'string' || message.trim() === '')) {
-      return NextResponse.json(
-        { error: 'message must be a non-empty string', code: 'INVALID_MESSAGE' },
-        { status: 400 }
-      );
-    }
-
-    if (metadata !== undefined && metadata !== null) {
-      if (typeof metadata === 'string') {
-        try {
-          JSON.parse(metadata);
-        } catch {
-          return NextResponse.json(
-            { error: 'metadata must be valid JSON', code: 'INVALID_METADATA' },
-            { status: 400 }
-          );
-        }
-      } else if (typeof metadata !== 'object') {
-        return NextResponse.json(
-          { error: 'metadata must be valid JSON', code: 'INVALID_METADATA' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Prepare update data
-    const updateData: any = {};
-
-    if (userId !== undefined) {
       updateData.userId = parseInt(userId);
     }
+    
+    // type
     if (type !== undefined) {
+      if (typeof type !== 'string' || type.trim() === '') {
+        return NextResponse.json({ error: 'type must be a non-empty string', code: 'INVALID_TYPE' }, { status: 400 });
+      }
       updateData.type = type.trim();
     }
+    
+    // title
     if (title !== undefined) {
+      if (typeof title !== 'string' || title.trim() === '') {
+        return NextResponse.json({ error: 'title must be a non-empty string', code: 'INVALID_TITLE' }, { status: 400 });
+      }
       updateData.title = title.trim();
     }
-    if (message !== undefined) {
-      updateData.message = message.trim();
+    
+    // message (or body)
+    const finalMessageUpdate = message || bodyContent;
+    if (finalMessageUpdate !== undefined) {
+        if (typeof finalMessageUpdate !== 'string' || finalMessageUpdate.trim() === '') {
+            return NextResponse.json({ error: 'message/body must be a non-empty string', code: 'INVALID_MESSAGE' }, { status: 400 });
+        }
+        updateData.message = finalMessageUpdate.trim();
     }
+    
+    // read
     if (read !== undefined) {
-      updateData.read = read === true || read === 1 ? true : false;
+      updateData.read = read === true || read === 1;
     }
-    if (metadata !== undefined) {
-      if (metadata === null) {
-        updateData.metadata = null;
-      } else {
-        updateData.metadata = typeof metadata === 'string' 
-          ? JSON.parse(metadata) 
-          : metadata;
-      }
+    
+    // institutionId
+    if (institutionId !== undefined) {
+        if (isNaN(parseInt(institutionId))) {
+            return NextResponse.json({ error: 'institutionId must be a valid integer', code: 'INVALID_INSTITUTION_ID' }, { status: 400 });
+        }
+        updateData.institutionId = parseInt(institutionId);
+    }
+    
+    // audience
+    if (audience !== undefined) {
+        updateData.audience = audience;
     }
 
+    // metadata
+    if (metadata !== undefined) {
+      if (metadata !== null) {
+        if (typeof metadata === 'string') {
+          try {
+            updateData.metadata = JSON.parse(metadata);
+          } catch {
+            return NextResponse.json({ error: 'metadata must be valid JSON', code: 'INVALID_METADATA' }, { status: 400 });
+          }
+        } else if (typeof metadata === 'object') {
+          updateData.metadata = metadata;
+        } else {
+            return NextResponse.json({ error: 'metadata must be valid JSON or null', code: 'INVALID_METADATA' }, { status: 400 });
+        }
+      } else {
+        updateData.metadata = null;
+      }
+    }
+    
+    // --- Update ---
     const updated = await db
       .update(notifications)
       .set(updateData)
@@ -291,6 +326,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
+// --- PATCH Request Handler (Update 'read' status only) ---
 export async function PATCH(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -337,6 +373,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+// --- DELETE Request Handler (Delete an existing notification) ---
 export async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;

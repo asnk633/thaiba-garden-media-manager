@@ -1,0 +1,160 @@
+// src/db/seed.ts
+/**
+ * Safe seed for local/dev use.
+ * - Uses bcryptjs (no native builds).
+ * - Defensive about returned shapes from drizzle/sqlite drivers.
+ * - Adjust emails/passwords or extra fields if your schema differs.
+ */
+
+import bcrypt from "bcryptjs";
+import { db } from "@/db";
+import {
+  institutions,
+  users,
+  tasks,
+  files,
+  notifications,
+} from "@/db/schema";
+
+/** Utility: try to extract inserted id from various driver return shapes */
+async function extractInsertedId(result: any, label = "row"): Promise<number> {
+  if (!result) throw new Error(`No result returned when inserting ${label}`);
+
+  // drizzle .returning() often returns array of rows
+  if (Array.isArray(result) && result.length > 0) {
+    const row = result[0];
+    if (row && typeof row.id === "number") return row.id;
+    const idKey = Object.keys(row).find((k) => k.toLowerCase() === "id");
+    if (idKey) return Number((row as any)[idKey]);
+  }
+
+  // some drivers return an object with lastInsertRowid or insertId
+  if (typeof result === "object") {
+    if (typeof result.lastInsertRowid === "number") return result.lastInsertRowid;
+    if (typeof result.insertId === "number") return result.insertId;
+  }
+
+  // otherwise fail (so you know to inspect)
+  throw new Error(
+    `Couldn't determine inserted ${label} id. Inspect the raw result: ${JSON.stringify(result)}`
+  );
+}
+
+async function main() {
+  const now = new Date().toISOString();
+
+  // 1) Institution
+  const instInsert = db
+    .insert(institutions)
+    .values({
+      name: "Thaiba Garden (local seed)",
+      createdAt: now,
+    })
+    // returning may or may not be supported depending on driver; still safe
+    .returning({ id: institutions.id as any });
+  const institutionId = await extractInsertedId(await instInsert, "institution");
+
+  // 2) Users: admin + team member, hashed passwords
+  const adminPassword = "changeme123";
+  const teamPassword = "team12345";
+  const adminHash = bcrypt.hashSync(adminPassword, 10);
+  const teamHash = bcrypt.hashSync(teamPassword, 10);
+
+  const adminInsert = db
+    .insert(users)
+    .values({
+      email: "admin@thaiba.com",
+      passwordHash: adminHash,
+      fullName: "Admin User",
+      avatarUrl: null,
+      role: "admin",
+      institutionId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: users.id as any });
+
+  const teamInsert = db
+    .insert(users)
+    .values({
+      email: "john.doe@thaiba.com",
+      passwordHash: teamHash,
+      fullName: "John Doe",
+      avatarUrl: null,
+      role: "team",
+      institutionId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: users.id as any });
+
+  const adminId = await extractInsertedId(await adminInsert, "admin user");
+  const teamId = await extractInsertedId(await teamInsert, "team user");
+
+  // 3) Example tasks — keep field names matching your schema (adjust keys if needed)
+  const exampleTasks = [
+    {
+      title: "Design social media campaign",
+      description: "Visuals + copy for next month.",
+      status: "todo",
+      priority: "high",
+      assignedToId: teamId, // match your schema key (assignedToId / assignedTo)
+      createdById: adminId,
+      institutionId,
+      dueDate: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      title: "Edit promo video",
+      description: "Final cut and grade",
+      status: "in_progress",
+      priority: "urgent",
+      assignedToId: teamId,
+      createdById: adminId,
+      institutionId,
+      dueDate: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+
+  // If your schema uses slightly different column names (e.g. assignedTo vs assignedToId),
+  // update the objects above to match. drizzle will throw helpful type errors if mismatch.
+  await db.insert(tasks).values(exampleTasks);
+
+  // 4) Example file record (a placeholder URL)
+  await db.insert(files).values({
+    name: "example-doc.pdf",
+    fileUrl: "http://localhost/files/example-doc.pdf",
+    fileType: "application/pdf",
+    fileSize: 1024,
+    folder: "documents",
+    visibility: "all",
+    uploadedById: adminId,
+    institutionId,
+    createdAt: now,
+  });
+
+  // 5) Notification
+  await db.insert(notifications).values({
+    userId: adminId,
+    type: "info",
+    title: "Seed complete",
+    message: `Seeded database. Admin: admin@thaiba.com / ${adminPassword}`,
+    read: false,
+    metadata: JSON.stringify({ seeded: true }),
+    createdAt: now,
+  });
+
+  console.log("✅ Seed finished");
+  console.log(` - institutionId: ${institutionId}`);
+  console.log(` - adminId: ${adminId} (admin@thaiba.com / ${adminPassword})`);
+  console.log(` - teamId: ${teamId} (john.doe@thaiba.com / ${teamPassword})`);
+  process.exit(0);
+}
+
+main().catch((err) => {
+  console.error("Seed error:", err);
+  process.exit(1);
+});

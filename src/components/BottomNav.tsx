@@ -1,50 +1,97 @@
-'use client';
+// src/components/BottomNav.tsx
+"use client";
 
-import React from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { LayoutGrid, Calendar, BarChart3, FolderOpen, User } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
 
-interface NavItem {
-  label: string;
-  icon: React.ReactNode;
-  path: string;
-}
+type Role = "admin" | "team" | "guest";
 
-const navItems: NavItem[] = [
-  { label: 'Tasks', icon: <LayoutGrid className="h-5 w-5" />, path: '/tasks' },
-  { label: 'Calendar', icon: <Calendar className="h-5 w-5" />, path: '/calendar' },
-  { label: 'Reports', icon: <BarChart3 className="h-5 w-5" />, path: '/reports' },
-  { label: 'Files', icon: <FolderOpen className="h-5 w-5" />, path: '/files' },
-  { label: 'Profile', icon: <User className="h-5 w-5" />, path: '/profile' },
-];
-
-export function BottomNav() {
+export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const [fabOpen, setFabOpen] = useState(false);
+  const [role] = useState<Role>("admin"); // TODO: wire to real auth
+
+  const Tab = ({ href, label, icon }: { href: string; label: string; icon: string }) => {
+    const active = pathname === href;
+    return (
+      <Link
+        href={href}
+        className={`flex flex-col items-center justify-center gap-1 ${
+          active ? "text-[var(--tg-accent)] font-semibold" : "text-white/70 hover:text-white"
+        }`}
+        aria-label={label}
+      >
+        <span className="text-xl leading-none">{icon}</span>
+        <span className="text-[11px]">{label}</span>
+      </Link>
+    );
+  };
+
+  const handleFabClick = () => {
+    setFabOpen((s) => !s);
+    if (onFabClick) {
+      onFabClick();
+    }
+  };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
-      <nav className="flex items-center justify-around h-16">
-        {navItems.map((item) => {
-          const isActive = pathname === item.path || pathname?.startsWith(item.path + '/');
-          return (
-            <button
-              key={item.path}
-              onClick={() => router.push(item.path)}
-              className={cn(
-                'flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors',
-                isActive
-                  ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {item.icon}
-              <span className="text-xs font-medium">{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-    </div>
+    <>
+      {/* Center FAB */}
+      <div className="fixed inset-x-0 bottom-[84px] z-40 flex justify-center">
+        <button
+          onClick={handleFabClick}
+          className="h-14 w-14 rounded-full bg-[var(--tg-accent)] text-black text-3xl leading-[56px] shadow-lg"
+          aria-label="Create"
+        >
+          {/* Using the original + for simplicity, but you can swap to a Material Icon if loaded */}
+          +
+          {/* To use your suggestion, ensure Material Icons are loaded: */}
+          {/* <span className="material-symbols-outlined">add</span> */}
+        </button>
+      </div>
+
+      {/* FAB overlay + role-aware menu */}
+      {fabOpen && (
+        <>
+          <div className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm" onClick={() => setFabOpen(false)} />
+          <div className="fixed bottom-[150px] left-0 right-0 z-50 mx-auto flex max-w-sm flex-col items-center gap-2">
+            {role !== "guest" && <MenuBtn label="Create Event" onClick={() => {}} />}
+            <MenuBtn label="Create Task" onClick={() => {}} />
+            {role === "admin" && <MenuBtn label="Create Notification" onClick={() => {}} />}
+            {role === "guest" && (
+              <p className="text-xs text-white/70">Admin will assign a team member after submission.</p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Bottom bar */}
+      <footer className="fixed bottom-0 left-0 right-0 z-40">
+        <div className="mx-auto h-16 max-w-3xl rounded-t-2xl border-t border-white/10 bg-black/55 backdrop-blur-md">
+          {/* notch space */}
+          <div className="pointer-events-none absolute -top-6 left-1/2 h-12 w-12 -translate-x-1/2 rounded-full" />
+          <nav className="grid h-full grid-cols-6 place-items-center text-sm">
+            <Tab href="/home" label="Home"      icon="🏠" />
+            <Tab href="/tasks" label="Tasks"     icon="✅" />
+            <Tab href="/calendar" label="Calendar" icon="🗓️" />
+            <Tab href="/downloads" label="Downloads" icon="⬇️" />
+            <Tab href="/updates" label="Updates" icon="🔔" />
+            <Tab href="/profile" label="Profile" icon="👤" />
+          </nav>
+        </div>
+      </footer>
+    </>
+  );
+}
+
+function MenuBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-[220px] rounded-lg bg-[#2a2a2a] px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#333]"
+    >
+      {label}
+    </button>
   );
 }
