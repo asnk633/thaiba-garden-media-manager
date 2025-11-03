@@ -85,10 +85,6 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
             {/* 3. Added Reports button for admin */}
             {role === "admin" && (
               <MenuBtn
-                label="Reports"
-                onClick={() => {
-                  push("/reports");
-                  setFabOpen(false);
                 }}
               />
             )}
