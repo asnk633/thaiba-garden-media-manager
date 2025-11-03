@@ -2,14 +2,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation"; // 1. Imported useRouter
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 type Role = "admin" | "team" | "guest";
 
 export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
   const pathname = usePathname();
-  const { push } = useRouter(); // 2. Initialized useRouter
+  const { push } = useRouter();
   const [fabOpen, setFabOpen] = useState(false);
   const [role] = useState<Role>("admin"); // TODO: wire to real auth
 
@@ -31,9 +31,7 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
 
   const handleFabClick = () => {
     setFabOpen((s) => !s);
-    if (onFabClick) {
-      onFabClick();
-    }
+    if (onFabClick) onFabClick();
   };
 
   return (
@@ -45,10 +43,7 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
           className="h-14 w-14 rounded-full bg-[var(--tg-accent)] text-black text-3xl leading-[56px] shadow-lg"
           aria-label="Create"
         >
-          {/* Using the original + for simplicity, but you can swap to a Material Icon if loaded */}
           +
-          {/* To use your suggestion, ensure Material Icons are loaded: */}
-          {/* <span className="material-symbols-outlined">add</span> */}
         </button>
       </div>
 
@@ -56,38 +51,36 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
       {fabOpen && (
         <>
           <div className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm" onClick={() => setFabOpen(false)} />
-          <div className="fixed bottom-[150px] left-0 right-0 z-50 mx-auto flex max-w-sm flex-col items-center gap-2">
+          <div className="fixed bottom-[150px] left-0 right-0 z-50 mx-auto flex max-w-sm flex-col items-center gap-4 px-4">
             {role !== "guest" && (
               <MenuBtn
                 label="Create Event"
                 onClick={() => {
-                  // TODO: Implement
+                  // navigate to event creation flow or open modal
+                  push("/calendar/new");
                   setFabOpen(false);
                 }}
               />
             )}
+
             <MenuBtn
               label="Create Task"
               onClick={() => {
-                // TODO: Implement
+                push("/tasks/new");
                 setFabOpen(false);
               }}
             />
+
             {role === "admin" && (
               <MenuBtn
                 label="Create Notification"
                 onClick={() => {
-                  // TODO: Implement
+                  push("/notifications/new");
                   setFabOpen(false);
                 }}
               />
             )}
-            {/* 3. Added Reports button for admin */}
-            {role === "admin" && (
-              <MenuBtn
-                }}
-              />
-            )}
+
             {role === "guest" && (
               <p className="text-xs text-white/70">Admin will assign a team member after submission.</p>
             )}
@@ -101,8 +94,8 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
           {/* notch space */}
           <div className="pointer-events-none absolute -top-6 left-1/2 h-12 w-12 -translate-x-1/2 rounded-full" />
           <nav className="grid h-full grid-cols-6 place-items-center text-sm">
-            <Tab href="/home" label="Home"      icon="🏠" />
-            <Tab href="/tasks" label="Tasks"     icon="✅" />
+            <Tab href="/home" label="Home" icon="🏠" />
+            <Tab href="/tasks" label="Tasks" icon="✅" />
             <Tab href="/calendar" label="Calendar" icon="🗓️" />
             <Tab href="/downloads" label="Downloads" icon="⬇️" />
             <Tab href="/updates" label="Updates" icon="🔔" />
@@ -118,7 +111,7 @@ function MenuBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="w-[220px] rounded-lg bg-[#2a2a2a] px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#333]"
+      className="w-[260px] rounded-lg bg-[#2a2a2a] px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#333]"
     >
       {label}
     </button>
