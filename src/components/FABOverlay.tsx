@@ -32,7 +32,6 @@ export default function FABOverlay({
           { icon: "task_alt", label: "Create Task", action: "task" },
           { icon: "calendar_month", label: "Create Event", action: "event" },
           { icon: "notifications_active", label: "Create Notification", action: "notice" },
-          { icon: "bar_chart", label: "Reports", action: "report" },
         ]
       : role === "team"
       ? [
