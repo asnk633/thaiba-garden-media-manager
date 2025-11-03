@@ -43,8 +43,8 @@ export type Notification = {
   updatedAt: string;
 };
 
-function nowISO() { return new Date().toISOString(); }
-function makeId(prefix: string) { return `${prefix}_${Math.random().toString(36).slice(2, 8)}`; }
+export function nowISO() { return new Date().toISOString(); }
+export function makeId(prefix: string) { return `${prefix}_${Math.random().toString(36).slice(2, 8)}`; }
 
 export const db = {
   tasks: new Map<Id, Task>(),
