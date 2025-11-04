@@ -37,20 +37,8 @@ export default function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
   return (
     <>
       {/* Center FAB */}
-      <div className="fixed inset-x-0 bottom-[84px] z-40 flex justify-center">
-        <button
-          onClick={handleFabClick}
-          className="h-14 w-14 rounded-full bg-[var(--tg-accent)] text-black text-3xl leading-[56px] shadow-lg"
-          aria-label="Create"
-        >
-          +
-        </button>
-      </div>
-
-      {/* FAB overlay + role-aware menu */}
-      {fabOpen && (
-        <>
-          <div className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm" onClick={() => setFabOpen(false)} />
+{/* FAB overlay + role-aware menu */}
+/>
           <div className="fixed bottom-[150px] left-0 right-0 z-50 mx-auto flex max-w-sm flex-col items-center gap-4 px-4">
             {role !== "guest" && (
               <MenuBtn
