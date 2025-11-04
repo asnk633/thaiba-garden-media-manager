@@ -7,7 +7,7 @@ import BottomNav from "@/components/BottomNav";
 import FABOverlay from "@/components/FABOverlay";
 import { ToastProvider } from "@/components/ToastProvider";
 import { ClientDataProvider } from "./ClientDataContext";
-import { RoleContext } from "./RoleContext";
+import RoleProvider from "./RoleContext";
 import { useRouter } from "next/navigation";
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +25,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <RoleContext.Provider value={{ role }}>
+    <RoleProvider value={{ role }}>
       <ClientDataProvider>
         <div className="min-h-screen">
           <TopBar />
@@ -51,6 +51,6 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
           <ToastProvider />
         </div>
       </ClientDataProvider>
-    </RoleContext.Provider>
+    </RoleProvider>
   );
 }
