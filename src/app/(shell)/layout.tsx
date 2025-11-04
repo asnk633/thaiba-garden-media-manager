@@ -1,3 +1,4 @@
+// src/app/(shell)/layout.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -6,72 +7,50 @@ import BottomNav from "@/components/BottomNav";
 import FABOverlay from "@/components/FABOverlay";
 import { ToastProvider } from "@/components/ToastProvider";
 import { ClientDataProvider } from "./ClientDataContext";
-import { RoleProvider, useRole, type Role } from "./RoleContext";
-
-import CreateTaskModalGuest from "@/components/CreateTaskModalGuest";
-import CreateEventModal from "@/components/CreateEventModal";
-import CreateNotificationModalAdmin from "@/components/CreateNotificationModalAdmin";
-import EditEventModalAdmin from "@/components/EditEventModalAdmin";
-import ConfirmDialog from "@/components/ConfirmDialog";
-
-function ShellInner({ children }: { children: React.ReactNode }) {
-  const { user } = useRole();
-  const role: Role = user.role;
-
-  const [fabOpen, setFabOpen] = useState(false);
-  const [openTask, setOpenTask] = useState(false);
-  const [openEvent, setOpenEvent] = useState(false);
-  const [openNotice, setOpenNotice] = useState(false);
-  const [openEditEvent, setOpenEditEvent] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  return (
-    <div className="min-h-screen">
-      <TopBar />
-      <main className="pb-24 pt-2">{children}</main>
-
-      <BottomNav onFabClick={() => setFabOpen(true)} />
-      <FABOverlay
-        open={fabOpen}
-        role={role}
-        onClose={() => setFabOpen(false)}
-        onSelect={(action) => {
-          if (action === "task") setOpenTask(true);
-          if (action === "event") setOpenEvent(true);
-          if (action === "notice") setOpenNotice(true);
-          if (action === "report") window.location.assign("/reports");
-        }}
-      />
-
-      {/* role-aware creation */}
-      <CreateTaskModalGuest open={openTask} onClose={() => setOpenTask(false)} />
-      <CreateEventModal open={openEvent} role={role} onClose={() => setOpenEvent(false)} />
-      {role === "admin" && (
-        <CreateNotificationModalAdmin open={openNotice} onClose={() => setOpenNotice(false)} />
-      )}
-
-      {/* examples */}
-      <EditEventModalAdmin open={openEditEvent} onClose={() => setOpenEditEvent(false)} />
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Delete Event?"
-        message="This will permanently remove the event and its associated data."
-        confirmText="Delete"
-        onConfirm={() => setConfirmDelete(false)}
-        onCancel={() => setConfirmDelete(false)}
-      />
-    </div>
-  );
-}
+import { RoleContext } from "./RoleContext";
+import { useRouter } from "next/navigation";
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
+  const [fabOpen, setFabOpen] = useState(false);
+  const [role] = React.useState<"admin" | "team" | "guest">("admin"); // TODO: wire to real auth
+  const router = useRouter();
+
+  const handleSelect = (action: string) => {
+    // central routing for FAB actions
+    if (action === "task") router.push("/tasks/new");
+    else if (action === "event") router.push("/calendar/new");
+    else if (action === "notice") router.push("/notifications/new");
+    else if (action === "report") router.push("/reports");
+    setFabOpen(false);
+  };
+
   return (
-    <ToastProvider>
-      <RoleProvider>
-        <ClientDataProvider>
-          <ShellInner>{children}</ShellInner>
-        </ClientDataProvider>
-      </RoleProvider>
-    </ToastProvider>
+    <RoleContext.Provider value={{ role }}>
+      <ClientDataProvider>
+        <div className="min-h-screen">
+          <TopBar />
+          <main className="pb-24 pt-4">{children}</main>
+
+          {/* Center FAB trigger (single source of truth) */}
+          <div className="fixed inset-x-0 bottom-[84px] z-40 flex justify-center pointer-events-none">
+            <button
+              onClick={() => setFabOpen((s) => !s)}
+              aria-label="Create"
+              className="pointer-events-auto h-16 w-16 rounded-full bg-[var(--tg-accent)] text-black text-3xl shadow-lg hover:scale-105 transform transition"
+            >
+              <span style={{ lineHeight: "56px", display: "inline-block" }}>+</span>
+            </button>
+          </div>
+
+          {/* keep bottom nav (tabs only) */}
+          <BottomNav />
+
+          {/* FAB overlay (menu) */}
+          <FABOverlay open={fabOpen} role={role} onClose={() => setFabOpen(false)} onSelect={handleSelect} />
+
+          <ToastProvider />
+        </div>
+      </ClientDataProvider>
+    </RoleContext.Provider>
   );
 }
