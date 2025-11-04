@@ -26,6 +26,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
 
   return (
     <RoleProvider>
+<ToastProvider>
       <ClientDataProvider>
         <div className="min-h-screen">
           <TopBar />
@@ -48,9 +49,10 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
           {/* FAB overlay (menu) */}
           <FABOverlay open={fabOpen} role={role} onClose={() => setFabOpen(false)} onSelect={handleSelect} />
 
-          <ToastProvider />
+
         </div>
       </ClientDataProvider>
+      </ToastProvider>
     </RoleProvider>
   );
 }
