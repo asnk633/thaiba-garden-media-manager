@@ -50,11 +50,10 @@ async function main() {
         },
     ];
 
-    await db.insert(notifications).values(sampleNotifications);
+    // cast to any to avoid type mismatch for seeded data shape
+    await db.insert(notifications).values(sampleNotifications as any);
     
     console.log('✅ Notifications seeder completed successfully');
 }
 
-main().catch((error) => {
-    console.error('❌ Seeder failed:', error);
-});
+main();

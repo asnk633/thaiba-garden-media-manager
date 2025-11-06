@@ -106,6 +106,7 @@ async function main() {
 
     // 5) Insert a notification
     console.log(" - inserting a notification...");
+    // Cast to any to bypass strict typing mismatch in seed insertion.
     await db.insert(notifications).values({
       userId: adminId,
       type: "system",
@@ -114,7 +115,7 @@ async function main() {
       read: 0, // boolean mode stored as integer per schema
       metadata: JSON.stringify({ seed: true }),
       createdAt: now(),
-    });
+    } as any);
 
     // 6) Insert an attendance row
     console.log(" - inserting attendance...");

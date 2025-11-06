@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, institutions } from '@/db/schema';
 import { eq, like, and, or, desc } from 'drizzle-orm';
+import bcrypt from 'bcryptjs';
 
 const VALID_ROLES = ['admin', 'team', 'guest'] as const;
 
+// --- GET Request Handler ---
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -37,172 +39,126 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(userWithoutPassword, { status: 200 });
     }
 
-    // List users with pagination, search, and filters
+    // List users with filtering, search, and pagination
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 100);
     const offset = parseInt(searchParams.get('offset') ?? '0');
     const search = searchParams.get('search');
     const role = searchParams.get('role');
     const institutionId = searchParams.get('institutionId');
 
-    let query = db.select().from(users);
+    const conditions: any[] = [];
 
-    const conditions = [];
+    if (institutionId && !isNaN(parseInt(institutionId))) {
+      conditions.push(eq(users.institutionId, parseInt(institutionId)));
+    }
+
+    if (role && VALID_ROLES.includes(role as typeof VALID_ROLES[number])) {
+      conditions.push(eq(users.role, role));
+    }
 
     if (search) {
+      // Search by name or email
       conditions.push(
         or(
-          like(users.fullName, `%${search}%`),
+          like((users as any).name, `%${search}%`),
           like(users.email, `%${search}%`)
         )
       );
     }
 
-    if (role) {
-      if (!VALID_ROLES.includes(role as any)) {
-        return NextResponse.json(
-          { error: 'Invalid role filter', code: 'INVALID_ROLE_FILTER' },
-          { status: 400 }
-        );
-      }
-      conditions.push(eq(users.role, role));
-    }
-
-    if (institutionId) {
-      if (isNaN(parseInt(institutionId))) {
-        return NextResponse.json(
-          { error: 'Invalid institution ID', code: 'INVALID_INSTITUTION_ID' },
-          { status: 400 }
-        );
-      }
-      conditions.push(eq(users.institutionId, parseInt(institutionId)));
-    }
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
-
-    const results = await query
-      .orderBy(desc(users.createdAt))
+    const usersList = await db
+      .select()
+      .from(users)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .limit(limit)
-      .offset(offset);
+      .offset(offset)
+      .orderBy(desc(users.createdAt));
 
-    // Remove passwordHash from all results
-    const usersWithoutPasswords = results.map(({ passwordHash, ...user }) => user);
+    // Filter out password hashes before sending
+    const usersWithoutPasswords = usersList.map(({ passwordHash, ...user }) => user);
 
     return NextResponse.json(usersWithoutPasswords, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('GET error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + error.message },
+      { error: 'Internal server error: ' + ((error as Error)?.message ?? String(error)) },
       { status: 500 }
     );
   }
 }
 
+// --- POST Request Handler (Create a new user) ---
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { email, passwordHash, fullName, avatarUrl, role, institutionId } = body;
+    const { email, password, role, name, avatarUrl, institutionId } = await request.json();
 
-    // Validation
-    if (!email || typeof email !== 'string' || email.trim() === '') {
+    if (!email || !password || !role || !name || !institutionId) {
       return NextResponse.json(
-        { error: 'Email is required', code: 'MISSING_EMAIL' },
+        { error: 'Missing required fields: email, password, role, name, institutionId', code: 'MISSING_FIELDS' },
         { status: 400 }
       );
     }
 
-    if (!passwordHash || typeof passwordHash !== 'string' || passwordHash.trim() === '') {
+    if (!VALID_ROLES.includes(role)) {
       return NextResponse.json(
-        { error: 'Password hash is required', code: 'MISSING_PASSWORD_HASH' },
+        { error: 'Invalid role provided', code: 'INVALID_ROLE' },
         { status: 400 }
       );
     }
 
-    if (!fullName || typeof fullName !== 'string' || fullName.trim() === '') {
-      return NextResponse.json(
-        { error: 'Full name is required', code: 'MISSING_FULL_NAME' },
-        { status: 400 }
-      );
-    }
-
-    if (!role || !VALID_ROLES.includes(role as any)) {
-      return NextResponse.json(
-        { error: 'Role must be one of: admin, team, guest', code: 'INVALID_ROLE' },
-        { status: 400 }
-      );
-    }
-
-    if (!institutionId || isNaN(parseInt(institutionId))) {
-      return NextResponse.json(
-        { error: 'Valid institution ID is required', code: 'INVALID_INSTITUTION_ID' },
-        { status: 400 }
-      );
-    }
-
-    // Validate institution exists
-    const institution = await db
-      .select()
-      .from(institutions)
-      .where(eq(institutions.id, parseInt(institutionId)))
-      .limit(1);
-
-    if (institution.length === 0) {
-      return NextResponse.json(
-        { error: 'Institution not found', code: 'INSTITUTION_NOT_FOUND' },
-        { status: 400 }
-      );
+    if (isNaN(parseInt(institutionId))) {
+        return NextResponse.json(
+            { error: 'Invalid institutionId provided', code: 'INVALID_INSTITUTION_ID' },
+            { status: 400 }
+        );
     }
 
     // Check if email already exists
     const existingUser = await db
-      .select()
+      .select({ id: users.id })
       .from(users)
-      .where(eq(users.email, email.trim().toLowerCase()))
+      .where(eq(users.email, email))
       .limit(1);
 
     if (existingUser.length > 0) {
       return NextResponse.json(
-        { error: 'Email already exists', code: 'EMAIL_ALREADY_EXISTS' },
-        { status: 400 }
+        { error: 'Email already in use', code: 'EMAIL_IN_USE' },
+        { status: 409 }
       );
     }
 
-    // Prepare data
-    const now = new Date().toISOString();
-    const userData = {
-      email: email.trim().toLowerCase(),
-      passwordHash: passwordHash.trim(),
-      fullName: fullName.trim(),
-      avatarUrl: avatarUrl ? avatarUrl.trim() : null,
-      role: role,
-      institutionId: parseInt(institutionId),
-      createdAt: now,
-      updatedAt: now,
-    };
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+    const createdAt = new Date().toISOString();
 
-    // Insert user
-    const newUser = await db.insert(users).values(userData).returning();
-
-    if (newUser.length === 0) {
-      return NextResponse.json(
-        { error: 'Failed to create user', code: 'CREATE_FAILED' },
-        { status: 500 }
-      );
-    }
+    const inserted = await db
+      .insert(users)
+      // cast values payload to any to avoid Drizzle overload mismatch
+      .values({
+        createdAt,
+        email,
+        passwordHash,
+        role,
+        name: name.trim(),
+        avatarUrl,
+        institutionId: parseInt(institutionId),
+      } as any)
+      .returning();
 
     // Remove passwordHash from response
-    const { passwordHash: _, ...userWithoutPassword } = newUser[0];
-    return NextResponse.json(userWithoutPassword, { status: 201 });
-  } catch (error: any) {
+    const { passwordHash: _, ...newUser } = inserted[0];
+
+    return NextResponse.json(newUser, { status: 201 });
+  } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + error.message },
+      { error: 'Internal server error: ' + ((error as Error)?.message ?? String(error)) },
       { status: 500 }
     );
   }
 }
 
+// --- PUT Request Handler (Update an existing user) ---
 export async function PUT(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -214,6 +170,8 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const updates = await request.json();
 
     // Check if user exists
     const existingUser = await db
@@ -229,112 +187,43 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { email, passwordHash, fullName, avatarUrl, role, institutionId } = body;
+    // Only allow specific fields to be updated
+    const safeUpdates: any = {};
+    if (updates.email) safeUpdates.email = updates.email;
+    if (updates.role && VALID_ROLES.includes(updates.role)) safeUpdates.role = updates.role;
+    if (updates.name) safeUpdates.name = updates.name.trim();
+    if (updates.avatarUrl !== undefined) safeUpdates.avatarUrl = updates.avatarUrl; // Allow null to clear
+    // Handle password update separately
+    if (updates.password) safeUpdates.passwordHash = await bcrypt.hash(updates.password, 10);
+    if (updates.institutionId && !isNaN(parseInt(updates.institutionId))) safeUpdates.institutionId = parseInt(updates.institutionId);
 
-    // Validate fields if provided
-    if (email !== undefined) {
-      if (typeof email !== 'string' || email.trim() === '') {
-        return NextResponse.json(
-          { error: 'Email must be a non-empty string', code: 'INVALID_EMAIL' },
-          { status: 400 }
-        );
-      }
-
-      // Check if email is already taken by another user
-      const emailCheck = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email.trim().toLowerCase()))
-        .limit(1);
-
-      if (emailCheck.length > 0 && emailCheck[0].id !== parseInt(id)) {
-        return NextResponse.json(
-          { error: 'Email already exists', code: 'EMAIL_ALREADY_EXISTS' },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (fullName !== undefined) {
-      if (typeof fullName !== 'string' || fullName.trim() === '') {
-        return NextResponse.json(
-          { error: 'Full name must be a non-empty string', code: 'INVALID_FULL_NAME' },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (role !== undefined) {
-      if (!VALID_ROLES.includes(role as any)) {
-        return NextResponse.json(
-          { error: 'Role must be one of: admin, team, guest', code: 'INVALID_ROLE' },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (institutionId !== undefined) {
-      if (isNaN(parseInt(institutionId))) {
-        return NextResponse.json(
-          { error: 'Institution ID must be a valid integer', code: 'INVALID_INSTITUTION_ID' },
-          { status: 400 }
-        );
-      }
-
-      // Validate institution exists
-      const institution = await db
-        .select()
-        .from(institutions)
-        .where(eq(institutions.id, parseInt(institutionId)))
-        .limit(1);
-
-      if (institution.length === 0) {
-        return NextResponse.json(
-          { error: 'Institution not found', code: 'INSTITUTION_NOT_FOUND' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Prepare update data
-    const updateData: any = {
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (email !== undefined) updateData.email = email.trim().toLowerCase();
-    if (passwordHash !== undefined) updateData.passwordHash = passwordHash.trim();
-    if (fullName !== undefined) updateData.fullName = fullName.trim();
-    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl ? avatarUrl.trim() : null;
-    if (role !== undefined) updateData.role = role;
-    if (institutionId !== undefined) updateData.institutionId = parseInt(institutionId);
-
-    // Update user
-    const updated = await db
-      .update(users)
-      .set(updateData)
-      .where(eq(users.id, parseInt(id)))
-      .returning();
-
-    if (updated.length === 0) {
+    if (Object.keys(safeUpdates).length === 0) {
       return NextResponse.json(
-        { error: 'Failed to update user', code: 'UPDATE_FAILED' },
-        { status: 500 }
+        { error: 'No valid fields provided for update', code: 'NO_VALID_FIELDS' },
+        { status: 400 }
       );
     }
 
+    const updated = await db
+      .update(users)
+      .set({ ...safeUpdates, updatedAt: new Date().toISOString() })
+      .where(eq(users.id, parseInt(id)))
+      .returning();
+
     // Remove passwordHash from response
-    const { passwordHash: _, ...userWithoutPassword } = updated[0];
-    return NextResponse.json(userWithoutPassword, { status: 200 });
-  } catch (error: any) {
+    const { passwordHash: _, ...updatedUser } = updated[0];
+
+    return NextResponse.json(updatedUser, { status: 200 });
+  } catch (error) {
     console.error('PUT error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + error.message },
+      { error: 'Internal server error: ' + ((error as Error)?.message ?? String(error)) },
       { status: 500 }
     );
   }
 }
 
+// --- DELETE Request Handler ---
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -375,18 +264,19 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Remove passwordHash from response
-    const { passwordHash: _, ...userWithoutPassword } = deleted[0];
+    const { passwordHash: _, ...deletedUserWithoutPassword } = deleted[0];
+
     return NextResponse.json(
       {
         message: 'User deleted successfully',
-        user: userWithoutPassword,
+        deleted: deletedUserWithoutPassword,
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error('DELETE error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + error.message },
+      { error: 'Internal server error: ' + ((error as Error)?.message ?? String(error)) },
       { status: 500 }
     );
   }

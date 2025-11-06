@@ -2,15 +2,14 @@
 "use client";
 
 import React from "react";
-import TopBar from "@/components/TopBar";       // default import (fixed)
-import BottomNav from "@/components/BottomNav"; // has centered + FAB
+// BottomNav is intentionally not imported here. The shell layout (src/app/(shell)/layout.tsx)
+// owns BottomNav + FAB so there is a single source-of-truth for navigation and the FAB.
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
-      <TopBar />
       <main className="pb-24 pt-4">{children}</main>
-      <BottomNav />
+      {/* BottomNav removed from AppLayout to avoid duplicate FAB. */}
     </div>
   );
 }

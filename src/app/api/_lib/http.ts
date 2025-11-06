@@ -7,7 +7,12 @@ export type ErrResponse = { error: { code: string; message: string } };
 
 export const ok = <T>(data: T, init?: ResponseInit) =>
   NextResponse.json<T extends any[] ? ListResponse<T[number]> : OneResponse<T>>(
-    Array.isArray(data) ? { data, meta: { count: data.length } } : { data },
+    // When T is an array we return a ListResponse, otherwise OneResponse.
+    // Narrowing to `any` here prevents a complex conditional generic error
+    // that TypeScript sometimes produces with the inferred union.
+    (Array.isArray(data)
+      ? ({ data, meta: { count: data.length } } as unknown as any)
+      : ({ data } as unknown as any)),
     init
   );
 

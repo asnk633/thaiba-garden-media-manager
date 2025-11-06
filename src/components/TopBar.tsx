@@ -17,22 +17,31 @@ export default function TopBar() {
         const res = await fetch("/api/health");
         const ok = res.ok ? (await res.json())?.status === "healthy" : false;
         if (mounted) setHealth(ok ? "healthy" : "error");
-      } catch { if (mounted) setHealth("error"); }
+      } catch {
+        if (mounted) setHealth("error");
+      }
     };
     const fetchNotifications = async () => {
       try {
         const res = await fetch("/api/notifications?userId=1&read=false&limit=5");
         if (mounted) setUnread(res.ok ? (await res.json()).length ?? 0 : 0);
-      } catch { if (mounted) setUnread(0); }
+      } catch {
+        if (mounted) setUnread(0);
+      }
     };
-    fetchHealth(); fetchNotifications();
+    fetchHealth();
+    fetchNotifications();
     const t1 = setInterval(fetchHealth, 60_000);
     const t2 = setInterval(fetchNotifications, 30_000);
-    return () => { mounted = false; clearInterval(t1); clearInterval(t2); };
+    return () => {
+      mounted = false;
+      clearInterval(t1);
+      clearInterval(t2);
+    };
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between bg-black/60 backdrop-blur-md px-4 py-3 border-b border-white/10">
+    <header className="sticky top-0 z-50 flex items-center justify-between bg-black/60 backdrop-blur-md px-4 py-3 border-b border-white/10">
       <div className="flex items-center gap-2">
         <span
           className={`inline-block h-3 w-3 rounded-full ${
@@ -44,7 +53,9 @@ export default function TopBar() {
       </div>
 
       <nav className="flex items-center gap-3 text-white/80">
-        <button aria-label="Theme" className="hover:text-white">🌙</button>
+        <button aria-label="Theme" className="hover:text-white">
+          🌙
+        </button>
         <Link href="/updates" className="relative hover:text-white" aria-label="Notifications" title="Notifications">
           🔔
           {unread > 0 && (
@@ -53,7 +64,17 @@ export default function TopBar() {
             </span>
           )}
         </Link>
-        <Link href="/profile" className="grid h-8 w-8 place-items-center rounded-full bg-white/10 text-sm">AU</Link>
+        
+        {/* Avatar link updated to match the requested styling */}
+        <Link href="/profile" aria-label="Open profile" className="ml-2">
+          <div
+            className="w-9 h-9 rounded-full overflow-hidden border-2 border-white/8 cursor-pointer grid place-items-center"
+            title="Your profile"
+            style={{ pointerEvents: "auto" }}
+          >
+            <span className="text-sm font-medium text-white/90">AU</span>
+          </div>
+        </Link>
       </nav>
     </header>
   );

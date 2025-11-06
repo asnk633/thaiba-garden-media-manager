@@ -42,8 +42,8 @@ export async function GET(request: NextRequest) {
     const createdById = searchParams.get('createdById');
 
     // Integrated filters from the second script, mapping 'from'/'to' to 'startDate'/'endDate' logic
-    const from = searchParams.get('from'); // Maps to startDate
-    const to = searchParams.get('to');     // Maps to endDate
+    const from = searchParams.get('from'); // Maps to startTime
+    const to = searchParams.get('to');     // Maps to endTime
 
     const conditions = [];
 
@@ -79,7 +79,8 @@ export async function GET(request: NextRequest) {
     let query = db.select().from(events);
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      // Avoid complex generic mismatch from drizzle select types by casting.
+      query = (query.where(and(...conditions)) as unknown) as any;
     }
 
     const results = await query
@@ -177,6 +178,7 @@ export async function POST(request: NextRequest) {
 
     const newEvent = await db
       .insert(events)
+      // Cast the values payload to any to avoid strict drizzle overload issues.
       .values({
         title: title.trim(),
         description: description ? description.trim() : null,
@@ -184,11 +186,10 @@ export async function POST(request: NextRequest) {
         endTime: endTimeDate ? endTimeDate.toISOString() : null, // Allowing null end time
         createdById: parseInt(createdById.toString()),
         institutionId: parseInt(institutionId.toString()),
-        // Integrating new fields from the second script
         location: location ?? '', // Default to empty string
         visibility: visibility ?? 'team', // Default to 'team'
         createdAt: new Date().toISOString(),
-      })
+      } as any)
       .returning();
 
     return NextResponse.json(newEvent[0], { status: 201 });

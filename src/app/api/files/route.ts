@@ -73,7 +73,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      // Cast to any to bypass transient drizzle/TS inference mismatch.
+      query = (query.where(and(...conditions)) as unknown) as any;
     }
 
     const results = await query

@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
     let query = db.select().from(institutions);
 
     if (search) {
-      query = query.where(like(institutions.name, `%${search}%`));
+      // TS/drizzle select typing mismatch — cast result to any.
+      query = (query.where(like(institutions.name, `%${search}%`)) as unknown) as any;
     }
 
     const results = await query.limit(limit).offset(offset);

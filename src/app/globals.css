@@ -27,3 +27,7 @@ body {
 section {
   border-radius: 12px;
 }
+
+:root {
+  --bottom-nav-height: 64px; /* global anchor height for FAB positioning */
+}

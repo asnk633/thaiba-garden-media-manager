@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { db } from "@/db";
 import { files } from "@/db/schema";
+// small helper: avoid depending on a missing export in utils during local dev
+function isBase64DataUrl(s: string | null | undefined) {
+  if (!s || typeof s !== "string") return false;
+  return /^data:[\w/+.-]+;base64,/.test(s);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,12 +29,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid IDs" }, { status: 400 });
     }
 
-    // If Supabase not configured, fallback to base64 (dev)
+    // --- Dev/Local Fallback: Store small files as Base64 ---
+    // If Supabase not configured, fallback to base64 (dev) for small files
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
       const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const base64 = buffer.toString("base64");
-      const dataUrl = `data:${file.type};base64,${base64}`;
+      // Simple size check (e.g., limit to 1MB for base64 to avoid massive DB rows)
+      if (arrayBuffer.byteLength > 1024 * 1024) {
+        return NextResponse.json({ error: "File too large for local storage fallback" }, { status: 413 });
+      }
+
+      const fileBuf = Buffer.from(arrayBuffer);
+      const dataUrl = `data:${file.type};base64,${fileBuf.toString("base64")}`;
 
       const inserted = await db.insert(files).values({
         name: file.name,
@@ -41,11 +51,12 @@ export async function POST(request: NextRequest) {
         uploadedById,
         institutionId,
         createdAt: new Date().toISOString(),
-      }).returning();
+      } as any).returning();
 
       return NextResponse.json(inserted[0], { status: 201 });
     }
 
+    // --- Production/Supabase Upload ---
     const arrayBuffer = await file.arrayBuffer();
     const fileBuf = Buffer.from(arrayBuffer);
     const pathKey = `files/${institutionId}/${Date.now()}_${file.name}`;
@@ -63,7 +74,7 @@ export async function POST(request: NextRequest) {
     // Save DB record with storage path
     const inserted = await db.insert(files).values({
       name: file.name,
-      fileUrl: null,
+      fileUrl: null, // Will be generated on GET request if needed
       fileType: file.type,
       fileSize: file.size,
       folder,
@@ -72,11 +83,15 @@ export async function POST(request: NextRequest) {
       institutionId,
       storagePath: data.path,
       createdAt: new Date().toISOString(),
-    }).returning();
+    } as any).returning();
 
     return NextResponse.json(inserted[0], { status: 201 });
-  } catch (err) {
-    console.error("File upload error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+
+  } catch (error) {
+    console.error("POST error:", error);
+    return NextResponse.json(
+      { error: 'Internal server error: ' + ((error as Error)?.message ?? String(error)) },
+      { status: 500 }
+    );
   }
 }

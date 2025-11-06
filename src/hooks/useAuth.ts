@@ -14,7 +14,7 @@
 import * as AuthModule from "@/contexts/AuthContext";
 
 // Prefer an actual named useAuth if present
-const useAuthHook = (AuthModule && (AuthModule.useAuth ?? AuthModule.default ?? null)) as any;
+const useAuthHook = (AuthModule && ((AuthModule as any).useAuth ?? (AuthModule as any).default ?? null)) as any;
 
 // Defensive: if nothing is present, export a stub that returns { user: null }.
 // This avoids crash loops but will hide chrome (as intended) so app still runs.
