@@ -1,68 +1,42 @@
 // src/components/BottomNav.tsx
 "use client";
 
-import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import FAB from "@/components/FAB";
-import { Home, CheckSquare, Calendar, Download, Bell, BarChart2 } from "lucide-react";
 
-type NavItem = { href: string; label: string; icon: React.ReactNode };
-
-export default function BottomNav({ isAdmin = false, canCreateEvent = false }: { isAdmin?: boolean; canCreateEvent?: boolean }) {
+export default function BottomNav() {
   const pathname = usePathname();
 
-  // We removed Profile from bottom nav and renamed Updates -> Notifications
-  // Final set (6 tabs) to keep symmetry with center FAB:
-  const items: NavItem[] = [
-    { href: "/home", label: "Home", icon: <Home size={18} /> },
-    { href: "/tasks", label: "Tasks", icon: <CheckSquare size={18} /> },
-    { href: "/calendar", label: "Calendar", icon: <Calendar size={18} /> },
-    { href: "/downloads", label: "Downloads", icon: <Download size={18} /> },
-    { href: "/notifications", label: "Notifications", icon: <Bell size={18} /> }, // renamed
-    { href: "/reports", label: "Reports", icon: <BarChart2 size={18} /> },
-  ];
+  const Tab = ({ href, label, icon }: { href: string; label: string; icon: string }) => {
+    const active = pathname === href;
+    return (
+      <Link
+        href={href}
+        className={`flex flex-col items-center justify-center gap-1 ${
+          active ? "text-[var(--tg-accent)] font-semibold" : "text-white/70 hover:text-white"
+        }`}
+        aria-label={label}
+      >
+        <span className="text-xl leading-none">{icon}</span>
+        <span className="text-[11px]">{label}</span>
+      </Link>
+    );
+  };
 
   return (
-    <>
-      <nav
-        aria-label="Bottom navigation"
-        className="fixed left-0 right-0 bottom-0 z-40"
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          pointerEvents: "auto",
-        }}
-      >
-        <div
-          className="rounded-t-2xl shadow-2xl"
-          style={{
-            width: "min(980px, 98%)",
-            margin: "0 auto",
-            background: "linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.35))",
-            padding: "10px 18px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 6,
-          }}
-        >
-          {items.map((it) => {
-            const active = pathname === it.href || pathname?.startsWith(it.href + "/");
-            return (
-              <Link key={it.href} href={it.href} className="nav-item" style={{ textDecoration: "none", color: active ? "#2ee6b6" : "#cfcfcf", display: "flex", flexDirection: "column", alignItems: "center", fontSize: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40 }}>
-                  {it.icon}
-                </div>
-                <span style={{ marginTop: 4 }}>{it.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
-
-      {/* FAB sits above bottom nav — imported from component */}
-      <FAB />
-    </>
+    <footer className="fixed bottom-0 left-0 right-0 z-40">
+      <div className="mx-auto h-16 max-w-3xl rounded-t-2xl border-t border-white/10 bg-black/55 backdrop-blur-md">
+        {/* notch space */}
+        <div className="pointer-events-none absolute -top-6 left-1/2 h-12 w-12 -translate-x-1/2 rounded-full" />
+        <nav className="grid h-full grid-cols-6 place-items-center text-sm">
+          <Tab href="/home" label="Home" icon="🏠" />
+          <Tab href="/tasks" label="Tasks" icon="✅" />
+          <Tab href="/calendar" label="Calendar" icon="🗓️" />
+          <Tab href="/downloads" label="Downloads" icon="⬇️" />
+          <Tab href="/updates" label="Updates" icon="🔔" />
+          <Tab href="/profile" label="Profile" icon="👤" />
+        </nav>
+      </div>
+    </footer>
   );
 }
