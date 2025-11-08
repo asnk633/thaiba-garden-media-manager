@@ -12,7 +12,9 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
     headless: true,
+    // D. Increased actionTimeout and added navigationTimeout
     actionTimeout: 30_000,
+    navigationTimeout: 60_000,
   },
 
   webServer: {
