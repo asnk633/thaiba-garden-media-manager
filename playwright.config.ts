@@ -1,45 +1,49 @@
-// playwright.config.ts
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
-  testDir: "e2e/playwright",
-  timeout: 120_000,
+  testDir: "./e2e/playwright",
+  timeout: 45_000,
   expect: { timeout: 5_000 },
-  fullyParallel: false,
+  fullyParallel: true,
   retries: 0,
   reporter: [["html", { open: "never" }]],
+
   use: {
     baseURL: "http://localhost:3000",
+    headless: false,
     trace: "on-first-retry",
-    headless: true,
-    // D. Increased actionTimeout and added navigationTimeout
-    actionTimeout: 30_000,
-    navigationTimeout: 60_000,
+    video: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
+
+  // We use only Chromium (Edge)
+  projects: [
+    {
+      name: "admin",
+      use: {
+        ...devices["Desktop Edge"],
+        storageState: "e2e/states/admin.json",
+      },
+    },
+    {
+      name: "team",
+      use: {
+        ...devices["Desktop Edge"],
+        storageState: "e2e/states/team.json",
+      },
+    },
+    {
+      name: "guest",
+      use: {
+        ...devices["Desktop Edge"],
+        storageState: "e2e/states/guest.json",
+      },
+    },
+  ],
 
   webServer: {
     command: "npm run dev",
     port: 3000,
-    timeout: 120_000,
     reuseExistingServer: true,
-    env: {
-      // Keep if you have local env overrides. Remove if not needed.
-      // NEXT_PUBLIC_PLAYWRIGHT: "1"
-    },
   },
-
-  projects: [
-    {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "firefox",
-      use: { ...devices["Desktop Firefox"] },
-    },
-    {
-      name: "webkit",
-      use: { ...devices["Desktop Safari"] },
-    },
-  ],
 });
