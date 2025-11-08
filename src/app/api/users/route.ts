@@ -42,7 +42,8 @@ export async function GET(request: NextRequest) {
     // List users with filtering, search, and pagination
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 100);
     const offset = parseInt(searchParams.get('offset') ?? '0');
-    const search = searchParams.get('search');
+    // Apply trim and store the result
+    const search = searchParams.get('search')?.trim(); 
     const role = searchParams.get('role');
     const institutionId = searchParams.get('institutionId');
 
@@ -56,12 +57,15 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(users.role, role));
     }
 
-    if (search) {
+    // Only add search condition if search term is non-empty after trimming
+    if (search && search.length > 0) {
+      const likePattern = `%${search}%`;
       // Search by name or email
       conditions.push(
         or(
-          like((users as any).name, `%${search}%`),
-          like(users.email, `%${search}%`)
+          // Assuming 'name' is the correct column based on your original code
+          like((users as any).name, likePattern),
+          like(users.email, likePattern)
         )
       );
     }
