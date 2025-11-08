@@ -1,0 +1,12 @@
+/* src/components/Fab/fab.css */
+
+/* fallback for gap if JS/TS didn't set it */
+:root {
+  --fab-gap-width: 96px;
+}
+
+/* small focus ring override tuned for the new palette */
+.fab-focus-fallback:focus-visible {
+  outline: 3px solid rgba(124,58,237,0.16);
+  border-radius: 999px;
+}

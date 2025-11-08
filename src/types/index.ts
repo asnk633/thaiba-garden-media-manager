@@ -40,9 +40,11 @@ export interface Event {
   description: string | null;
   startTime: string;
   endTime: string;
+  approvalStatus: 'pending' | 'approved' | 'declined';
   createdById: number;
   institutionId: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface Notification {
@@ -77,5 +79,24 @@ export interface File {
   visibility: FileVisibility;
   uploadedById: number;
   institutionId: number;
+  createdAt: string;
+}
+
+export interface TaskComment {
+  id: number;
+  taskId: number;
+  userId: number;
+  comment: string;
+  createdAt: string;
+}
+
+export interface Attachment {
+  id: number;
+  taskId: number;
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  uploadedById: number;
   createdAt: string;
 }

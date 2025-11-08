@@ -1,95 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db'; // Assumes Drizzle ORM connection
-import { notifications } from '@/db/schema'; // Assumes Drizzle schema definition
+import { db } from '@/db';
+import { notifications } from '@/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
+import { getUserFromRequest, isAdmin } from '../_lib/auth';
 
-// --- GET Request Handler (Fetch single or list of notifications) ---
+// --- GET Request Handler (Fetch notifications for current user) ---
 export async function GET(request: NextRequest) {
   try {
+    const user = getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
-    const id = searchParams.get('id');
-
-    // Single notification by ID
-    if (id) {
-      if (!id || isNaN(parseInt(id))) {
-        return NextResponse.json(
-          { error: 'Valid ID is required', code: 'INVALID_ID' },
-          { status: 400 }
-        );
-      }
-
-      const notification = await db
-        .select()
-        .from(notifications)
-        .where(eq(notifications.id, parseInt(id)))
-        .limit(1);
-
-      if (notification.length === 0) {
-        return NextResponse.json(
-          { error: 'Notification not found', code: 'NOT_FOUND' },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json(notification[0], { status: 200 });
-    }
-
-    // List notifications with filtering and pagination
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 100);
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 100);
     const offset = parseInt(searchParams.get('offset') ?? '0');
-    const userId = searchParams.get('userId');
-    const institutionId = searchParams.get('institutionId');
     const read = searchParams.get('read');
-    const type = searchParams.get('type');
 
-    const conditions: any[] = [];
+    const conditions: any[] = [eq(notifications.userId, user.id)];
 
-    if (userId && !isNaN(parseInt(userId))) {
-      conditions.push(eq(notifications.userId, parseInt(userId)));
-    }
-
-    if (type) {
-      conditions.push(eq(notifications.type, type));
-    }
-
-    // notifications table may not have institutionId in the current schema.
-    // Use a runtime/type cast check and only add the filter when the column exists.
-    if (institutionId && (notifications as any).institutionId) {
-      conditions.push(eq((notifications as any).institutionId, parseInt(institutionId)));
-    }
-
-    // `read` param may be null/undefined; guard before using.
-    const isRead = read ? read.toLowerCase() === 'true' : undefined;
-    if (typeof isRead !== 'undefined' && (notifications as any).read) {
-      conditions.push(eq((notifications as any).read, isRead));
+    // Filter by read status if provided
+    if (read !== null) {
+      const isRead = read === 'true';
+      conditions.push(eq(notifications.read, isRead));
     }
 
     const notificationsList = await db
       .select()
       .from(notifications)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .limit(limit)
       .offset(offset)
       .orderBy(desc(notifications.createdAt));
 
-    return NextResponse.json(notificationsList, { status: 200 });
+    return NextResponse.json({ data: notificationsList }, { status: 200 });
   } catch (error) {
     console.error('GET error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-// --- POST Request Handler (Create a new notification) ---
+// --- POST Request Handler (Create notification - admin only) ---
 export async function POST(request: NextRequest) {
   try {
-    const { userId, type, title, message, read, metadata } = await request.json();
+    const user = getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Only admin can create notifications
+    if (!isAdmin(user)) {
+      return NextResponse.json(
+        { error: 'Only admins can create notifications' },
+        { status: 403 }
+      );
+    }
+
+    const { userId, type, title, message, metadata } = await request.json();
 
     if (!userId || !type || !title || !message) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, type, title, message', code: 'MISSING_FIELDS' },
+        { error: 'Missing required fields: userId, type, title, message' },
         { status: 400 }
       );
     }
@@ -98,23 +72,22 @@ export async function POST(request: NextRequest) {
 
     const inserted = await db
       .insert(notifications)
-      // Cast payload to any to avoid strict drizzle overload mismatch in this build.
       .values({
         createdAt,
         title,
         userId,
         message,
         type,
-        read: !!read,
-        metadata,
-      } as any)
+        read: false,
+        metadata: metadata || null,
+      })
       .returning();
 
-    return NextResponse.json(inserted[0], { status: 201 });
+    return NextResponse.json({ data: inserted[0] }, { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

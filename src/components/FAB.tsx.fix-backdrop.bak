@@ -1,0 +1,134 @@
+// src/components/FAB.tsx
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Plus, ListTodo, CalendarPlus, Bell, X } from 'lucide-react';
+// Import or define your components/utilities
+// import { Button } from '@/components/ui/button'; 
+// import { cn } from '@/lib/utils'; 
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+
+// Placeholder for missing components/utilities for a complete, runnable file
+// REMOVE this placeholder block if you have real Button/cn imports
+const Button = ({ onClick, className, variant, children, ...props }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-md transition-colors ${className}`} 
+    {...props}
+  >
+    {children}
+  </button>
+);
+const cn = (...args: any[]) => args.filter(Boolean).join(' ');
+// END Placeholder
+
+export function FAB() {
+  const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
+  const { hasRole } = useAuth();
+
+  const isAdmin = hasRole && hasRole(['admin']);
+  const canCreateEvent = hasRole && hasRole(['admin', 'team']);
+
+  // Close on Escape and handle backdrop click
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const handleCreateTask = () => {
+    setIsOpen(false);
+    router.push('/tasks/new');
+  };
+
+  const handleCreateEvent = () => {
+    setIsOpen(false);
+    router.push('/calendar/new');
+  };
+
+  const handleNotify = () => {
+    setIsOpen(false);
+    router.push('/notifications/new'); // adjust route if different
+  };
+
+  // Prevent page scroll when open (mobile)
+  useEffect(() => {
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
+  return (
+    <>
+      {/* Backdrop */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 fab-backdrop md:hidden"
+          onClick={() => setIsOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* FAB wrapper centered above BottomNav */}
+      <div
+        className="fixed left-1/2 z-50"
+        style={{
+          transform: 'translateX(-50%)',
+          bottom: `calc(var(--bottom-nav-height, 56px) + var(--fab-offset, 12px))`,
+          pointerEvents: 'none', // allow inner elements to control pointer events
+        }}
+      >
+        <div className="flex flex-col items-center gap-3 pointer-events-auto">
+          {/* Menu items — stacked above the button */}
+          <div
+            className={cn(
+              'flex flex-col items-center gap-3 transition-all duration-200',
+              isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-3 pointer-events-none'
+            )}
+            role="menu"
+            aria-hidden={!isOpen}
+          >
+            {/* Order: admin notify on top so it appears visually above */}
+            {isAdmin && (
+              <Button onClick={handleNotify} className="w-48 justify-start h-12 gap-3 shadow-lg bg-white/10 hover:bg-white/20" variant="ghost">
+                <Bell className="h-4 w-4" /> <span>Notify</span>
+              </Button>
+            )}
+
+            {canCreateEvent && (
+              <Button onClick={handleCreateEvent} className="w-48 justify-start h-12 gap-3 shadow-lg bg-white/10 hover:bg-white/20" variant="ghost">
+                <CalendarPlus className="h-4 w-4" /> <span>New Event</span>
+              </Button>
+            )}
+
+            <Button onClick={handleCreateTask} className="w-48 justify-start h-12 gap-3 shadow-lg">
+              <ListTodo className="h-4 w-4" /> <span>New Task</span>
+            </Button>
+          </div>
+
+          {/* FAB button itself */}
+          <button
+            onClick={() => setIsOpen(s => !s)}
+            aria-expanded={isOpen}
+            aria-label={isOpen ? 'Close create menu' : 'Open create menu'}
+            className={cn(
+              'h-14 w-14 rounded-full flex items-center justify-center shadow-2xl transition-transform duration-200',
+              'focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-300',
+              !isOpen && 'fab-pulse' // idle pulse only when closed
+            )}
+            style={{
+              background: 'linear-gradient(180deg, #9b5cf6, #7c3aed)',
+              color: 'white',
+              pointerEvents: 'auto'
+            }}
+          >
+            {isOpen ? <X className="h-6 w-6" /> : <Plus className="h-6 w-6" />}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,148 @@
+"use client";
+
+import React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Home, CheckSquare, Calendar, Download, Bell, BarChart2 } from "lucide-react";
+
+/**
+ * Tweaked visual BottomNav (Tailwind).
+ * - larger radii
+ * - stronger shadow
+ * - smoother easing (ease-out)
+ */
+
+const LEFT = [
+  { href: "/home", label: "Home", Icon: Home },
+  { href: "/tasks", label: "Tasks", Icon: CheckSquare },
+  { href: "/calendar", label: "Calendar", Icon: Calendar },
+];
+
+const RIGHT = [
+  { href: "/downloads", label: "Downloads", Icon: Download },
+  { href: "/notifications", label: "Notifications", Icon: Bell },
+  { href: "/reports", label: "Reports", Icon: BarChart2 },
+];
+
+export default function BottomNav() {
+  const pathname = usePathname() ?? "/";
+
+  const isActive = (href: string) => {
+    if (href === "/home") return pathname === "/home" || pathname === "/";
+    return pathname === href || pathname?.startsWith(href + "/");
+  };
+
+  return (
+    <nav
+      aria-label="Bottom navigation"
+      className="fixed left-1/2 transform -translate-x-1/2 bottom-[calc(var(--bottom-nav-height,22px)+2px)] z-40 w-[min(980px,98%)] pointer-events-auto"
+    >
+      <div
+        className="w-full bg-white/100 dark:bg-[rgba(18,18,18,0.92)] rounded-[28px] px-3 py-2"
+        style={{
+          boxShadow:
+            "0 18px 40px rgba(12,10,35,0.18), 0 6px 18px rgba(12,10,35,0.08)",
+          backdropFilter: "saturate(120%) blur(8px)",
+        }}
+      >
+        <ul className="flex items-center justify-between gap-2">
+          {/* LEFT GROUP */}
+          <div className="flex items-center gap-2">
+            {LEFT.map(({ href, label, Icon }) => {
+              const active = isActive(href);
+              return (
+                <li key={href} className="list-none">
+                  <Link
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={
+                      "group relative overflow-hidden no-underline inline-flex items-center h-12 " +
+                      (active ? "w-36" : "w-14") +
+                      " transition-[width] duration-200 ease-out rounded-xl"
+                    }
+                  >
+                    {/* sliding bg */}
+                    <span
+                      aria-hidden
+                      className={
+                        "absolute inset-0 rounded-xl transform transition-transform duration-200 ease-out " +
+                        (active ? "translate-x-0 bg-gray-100/100 dark:bg-white/6" : "translate-x-full bg-gray-100/100 dark:bg-white/4")
+                      }
+                      style={{ zIndex: 0 }}
+                    />
+
+                    {/* icon */}
+                    <span className="relative z-10 ml-3 inline-flex items-center justify-center">
+                      <Icon size={18} />
+                    </span>
+
+                    {/* label */}
+                    <span
+                      className={
+                        "relative z-10 ml-3 pr-3 text-sm font-medium transition-all duration-200 ease-out " +
+                        (active ? "translate-x-0 opacity-100" : "translate-x-[100%] opacity-0 group-hover:translate-x-0 group-hover:opacity-100")
+                      }
+                      aria-hidden={!active}
+                    >
+                      {label}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </div>
+
+          {/* FAB GAP — width taken from CSS var --fab-gap-width (fallback 88px) */}
+          <div
+            className="flex-shrink-0"
+            style={{ width: "var(--fab-gap-width, 96px)" }}
+            aria-hidden
+          />
+
+          {/* RIGHT GROUP */}
+          <div className="flex items-center gap-2">
+            {RIGHT.map(({ href, label, Icon }) => {
+              const active = isActive(href);
+              return (
+                <li key={href} className="list-none">
+                  <Link
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={
+                      "group relative overflow-hidden no-underline inline-flex items-center h-12 " +
+                      (active ? "w-36" : "w-14") +
+                      " transition-[width] duration-200 ease-out rounded-xl"
+                    }
+                  >
+                    <span
+                      aria-hidden
+                      className={
+                        "absolute inset-0 rounded-xl transform transition-transform duration-200 ease-out " +
+                        (active ? "translate-x-0 bg-gray-100/100 dark:bg-white/6" : "translate-x-full bg-gray-100/100 dark:bg-white/4")
+                      }
+                      style={{ zIndex: 0 }}
+                    />
+
+                    <span className="relative z-10 ml-3 inline-flex items-center justify-center">
+                      <Icon size={18} />
+                    </span>
+
+                    <span
+                      className={
+                        "relative z-10 ml-3 pr-3 text-sm font-medium transition-all duration-200 ease-out " +
+                        (active ? "translate-x-0 opacity-100" : "translate-x-[100%] opacity-0 group-hover:translate-x-0 group-hover:opacity-100")
+                      }
+                      aria-hidden={!active}
+                    >
+                      {label}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </div>
+        </ul>
+      </div>
+    </nav>
+  );
+}
