@@ -1,3 +1,4 @@
+// src/app/(shell)/tasks/new/page.tsx - FINAL FILE
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -129,6 +130,7 @@ export default function NewTaskPage() {
               <Label htmlFor="title">Title *</Label>
               <Input
                 id="title"
+                data-testid="task-title-input" // ADDED data-testid
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 placeholder="Enter task title"
@@ -172,7 +174,7 @@ export default function NewTaskPage() {
                   value={formData.priority}
                   onValueChange={(value) => setFormData({ ...formData, priority: value })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="task-priority-select-trigger"> {/* ADDED data-testid */}
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -1,9 +1,10 @@
 "use client";
-
+import "@/lib/client-fetch-wrapper";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
 import { apiFromUiStatus, uiFromApiStatus } from "./utils/uiMaps";
 import { useRole } from "./RoleContext";
+
 
 export type TaskLite = {
   id: string;
@@ -45,6 +46,26 @@ function mapApiEvent(x: any): EventLite {
 }
 
 export function ClientDataProvider({ children }: { children: React.ReactNode }) {
+  // --- START DEV SEED LOGIC ---
+  React.useEffect(() => {
+    // DEV: auto-seed a user for local development if none present
+    if (process.env.NODE_ENV !== "production") {
+      const existing = localStorage.getItem("user"); // Assuming useRole reads from "user" in localStorage
+      if (!existing) {
+        const devUser = {
+          id: 1,
+          email: "admin@thaiba.com",
+          fullName: "Admin User",
+          role: "admin",
+          institutionId: "1", // Use string "1" to match institutionId usage in the file
+        };
+        localStorage.setItem("user", JSON.stringify(devUser));
+        // Force a reload or simply rely on the component using useRole to re-render
+      }
+    }
+  }, []);
+  // --- END DEV SEED LOGIC ---
+
   const { user } = useRole();
   const toast = useToast();
 

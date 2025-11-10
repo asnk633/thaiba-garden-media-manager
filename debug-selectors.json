@@ -1,0 +1,30 @@
+[
+  {
+    "sel": "[data-column-id='todo']",
+    "exists": false
+  },
+  {
+    "sel": "[data-column-id='in_progress']",
+    "exists": false
+  },
+  {
+    "sel": "[data-column-id='done']",
+    "exists": false
+  },
+  {
+    "sel": "[data-kanban-root]",
+    "exists": false
+  },
+  {
+    "sel": ".kanban",
+    "exists": false
+  },
+  {
+    "sel": ".kanban-column",
+    "exists": false
+  },
+  {
+    "sel": "[role='region'][aria-label='Kanban']",
+    "exists": false
+  }
+]

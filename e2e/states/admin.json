@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:3000",
+      "localStorage": [
+        {
+          "name": "user",
+          "value": "{\"id\":1,\"email\":\"admin@thaiba.com\",\"fullName\":\"Admin User\",\"avatarUrl\":null,\"role\":\"admin\",\"institutionId\":1}"
+        }
+      ]
+    }
+  ]
+}
