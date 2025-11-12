@@ -31,7 +31,7 @@ export function SortableItem({ id, columnId, children, className }: Props) {
 
   const style: React.CSSProperties & { "--translate-x"?: string; "--translate-y"?: string } = {
     transform: transform
-      ? `translate3d(${(transform as CSS.Transform).x ?? 0}px, ${(transform as CSS.Transform).y ?? 0}px, 0) scale(${(transform as any)?.scale ?? 1})`
+      ? `translate3d(${(transform as any).x ?? 0}px, ${(transform as any).y ?? 0}px, 0) scale(${(transform as any)?.scale ?? 1})`
       : undefined,
     transition,
     touchAction: "manipulation",

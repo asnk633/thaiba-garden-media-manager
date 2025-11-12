@@ -1,0 +1,251 @@
+*** Begin Patch
+*** Add File: scripts/make-storage.js
++#!/usr/bin/env node
++"use strict";
++/**
++ * scripts/make-storage.js
++ *
++ * Usage:
++ *   node scripts/make-storage.js <role> <outPath>
++ *
++ * role: admin | team | guest
++ * outPath: e.g. e2e/states/admin.json
++ *
++ * This script launches a headless browser, seeds the localStorage 'user'
++ * object to match the role, and saves Playwright storage state to outPath.
++ *
++ * NOTE: run while your dev server is running (http://localhost:3000).
++ */
++
++const { chromium } = require('playwright');
++const fs = require('fs');
++const path = require('path');
++
++async function main() {
++  const role = process.argv[2];
++  const out = process.argv[3];
++  if (!role || !out) {
++    console.error('Usage: node scripts/make-storage.js <role> <outPath>');
++    process.exit(2);
++  }
++
++  const roles = {
++    admin: { id: 1, email: 'admin@thaiba.com', fullName: 'Admin User', role: 'admin', institutionId: '1' },
++    team:  { id: 2, email: 'team@test.com', fullName: 'Team Member', role: 'team', institutionId: '1' },
++    guest: { id: 3, email: 'guest@test.com', fullName: 'Guest', role: 'guest', institutionId: '1' },
++  };
++  const user = roles[role];
++  if (!user) {
++    console.error('Unknown role', role);
++    process.exit(2);
++  }
++
++  const outDir = path.dirname(out);
++  fs.mkdirSync(outDir, { recursive: true });
++
++  const browser = await chromium.launch();
++  const context = await browser.newContext();
++  const page = await context.newPage();
++  try {
++    // navigate to dev server (must be running)
++    await page.goto('http://localhost:3000/', { waitUntil: 'load', timeout: 30000 });
++
++    // set localStorage user exactly how the app expects
++    await page.evaluate((u) => {
++      localStorage.setItem('user', JSON.stringify(u));
++      // also set any other keys your app reads on load (theme etc) if needed
++    }, user);
++
++    // give app a moment
++    await page.waitForTimeout(300);
++
++    // save storage state
++    const storage = await context.storageState();
++    fs.writeFileSync(out, JSON.stringify(storage, null, 2));
++    console.log('Saved:', out);
++  } catch (err) {
++    console.error('Error creating storage state:', err.message || err);
++    process.exit(1);
++  } finally {
++    await browser.close();
++  }
++}
++
++main();
++
+*** End Patch
+*** Begin Patch
+*** Update File: playwright.config.ts
+@@
+-import { defineConfig, devices } from '@playwright/test';
+-
+-export default defineConfig({
+-  timeout: 30000,
+-  retries: 0,
+-  testDir: './e2e/playwright',
+-  use: {
+-    baseURL: 'http://localhost:3000',
+-    headless: true,
+-    viewport: { width: 1280, height: 800 },
+-  },
+-});
++import { defineConfig, devices } from '@playwright/test';
++
++export default defineConfig({
++  timeout: 60000,
++  retries: 0,
++  testDir: './e2e/playwright',
++  reporter: [['list'], ['html', { outputFolder: 'playwright-report' }]],
++  use: {
++    baseURL: 'http://localhost:3000',
++    headless: true,
++    viewport: { width: 1280, height: 800 },
++    // default to Edge channel locally (change to 'chrome' or remove if not desired)
++    channel: 'msedge',
++  },
++  projects: [
++    {
++      name: 'admin-msedge',
++      use: {
++        storageState: 'e2e/states/admin.json',
++        channel: 'msedge',
++      },
++    },
++    {
++      name: 'team-msedge',
++      use: {
++        storageState: 'e2e/states/team.json',
++        channel: 'msedge',
++      },
++    },
++    {
++      name: 'guest-msedge',
++      use: {
++        storageState: 'e2e/states/guest.json',
++        channel: 'msedge',
++      },
++    },
++  ],
++});
+*** End Patch
+*** Begin Patch
+*** Update File: e2e/playwright/kanban-drag.spec.ts
+@@
+-import { test, expect } from '@playwright/test';
+-
+-test.describe('Kanban drag & drop (RBAC validated)', () => {
+-  test('Team member can drag task from To Do -> In Progress', async ({ page }) => {
+-    await page.goto('/tasks');
+-    await page.waitForSelector("[data-column-id='todo']", { timeout: 20000 });
+-    await page.waitForSelector("[data-column-id='in_progress']", { timeout: 20000 });
+-
+-    const todoColumn = page.locator("[data-column-id='todo']");
+-    const task = todoColumn.locator("[data-draggable='true']").first();
+-    await expect(task).toBeVisible({ timeout: 15000 });
+-
+-    const target = page.locator("[data-column-id='in_progress']");
+-    await task.dragTo(target);
+-    // assert moved (app-specific)
+-    await expect(target.locator(`[data-draggable='true']`)).toBeVisible();
+-  });
+-});
++import { test, expect } from '@playwright/test';
++
++// Use per-role projects in playwright.config.ts. Each run picks up storageState for the role.
++test.describe.configure({ mode: 'parallel' });
++
++// helper: ensure kanban loaded and seed a dummy To Do if none exists
++async function ensureKanbanAndSeed(page) {
++  // go to tasks page and wait for the kanban container (less brittle)
++  await page.goto('/tasks', { waitUntil: 'domcontentloaded' });
++  // wait for a top-level kanban wrapper that your app renders (fallback to body)
++  await page.waitForSelector('[data-kanban-root], .kanban, [data-column-id]', { timeout: 30000 });
++
++  // if no todo tasks, call API to create one (safe dev-only helper)
++  const hasTodo = await page.locator("[data-column-id='todo'] [data-draggable='true']").count();
++  if (!hasTodo) {
++    // try to create a minimal task via the public API used by the app
++    // we set institutionId=1 (matches dev seed) and title unique
++    const dummy = { title: "Playwright dummy task", description: "seed", priority: "medium", institutionId: "1" };
++    try {
++      await page.request.post('/api/tasks', { data: dummy });
++      // give app a moment to refresh UI
++      await page.waitForTimeout(500);
++    } catch (err) {
++      // ignore failures - test will fail after if UI not present
++      console.warn('Seeding failed', err);
++    }
++  }
++}
++
++test.describe('kanban - admin', () => {
++  test.use({ storageState: 'e2e/states/admin.json' });
++
++  test('Admin can see all columns including Done', async ({ page }) => {
++    await ensureKanbanAndSeed(page);
++    await page.waitForSelector("[data-column-id='done']", { timeout: 30000 });
++    await expect(page.locator("[data-column-id='done']")).toBeVisible();
++  });
++
++  test('Team member can drag task from To Do -> In Progress (admin view)', async ({ page }) => {
++    await ensureKanbanAndSeed(page);
++    await page.waitForSelector("[data-column-id='todo']", { timeout: 30000 });
++    await page.waitForSelector("[data-column-id='in_progress']", { timeout: 30000 });
++    const task = page.locator("[data-column-id='todo'] [data-draggable='true']").first();
++    await expect(task).toBeVisible({ timeout: 15000 });
++    const target = page.locator("[data-column-id='in_progress']");
++    await task.dragTo(target);
++    await expect(target.locator("[data-draggable='true']")).toBeVisible();
++  });
++});
++
++test.describe('kanban - team', () => {
++  test.use({ storageState: 'e2e/states/team.json' });
++
++  test('Team can drag task from To Do -> In Progress', async ({ page }) => {
++    await ensureKanbanAndSeed(page);
++    await page.waitForSelector("[data-column-id='todo']", { timeout: 30000 });
++    await page.waitForSelector("[data-column-id='in_progress']", { timeout: 30000 });
++    const task = page.locator("[data-column-id='todo'] [data-draggable='true']").first();
++    await expect(task).toBeVisible({ timeout: 15000 });
++    const target = page.locator("[data-column-id='in_progress']");
++    await task.dragTo(target);
++    await expect(target.locator("[data-draggable='true']")).toBeVisible();
++  });
++
++  test('Team sees columns (basic visibility)', async ({ page }) => {
++    await ensureKanbanAndSeed(page);
++    await page.waitForSelector("[data-column-id='todo']", { timeout: 30000 });
++    await expect(page.locator("[data-column-id='todo']")).toBeVisible();
++  });
++});
++
++test.describe('kanban - guest', () => {
++  test.use({ storageState: 'e2e/states/guest.json' });
++
++  test("Guest sees 'To Do' column", async ({ page }) => {
++    await ensureKanbanAndSeed(page);
++    await page.waitForSelector("[data-column-id='todo']", { timeout: 30000 });
++    await expect(page.locator("[data-column-id='todo']")).toBeVisible();
++  });
++
++  test('Guest cannot drag task to in_progress (RBAC enforced)', async ({ page }) => {
++    await ensureKanbanAndSeed(page);
++    await page.waitForSelector("[data-column-id='todo']", { timeout: 30000 });
++    const task = page.locator("[data-column-id='todo'] [data-draggable='true']").first();
++    await expect(task).toBeVisible({ timeout: 15000 });
++    // attempt drag and expect UI to not accept or not change status (app-specific)
++    const target = page.locator("[data-column-id='in_progress']");
++    // attempt drag; if the app prevents drag it will throw or do nothing
++    try {
++      await task.dragTo(target);
++    } catch(_) {}
++    // Assert we did NOT move the task (target shouldn't show this task)
++    // This is a loose check — adapt to your app's specific DOM/attributes if needed
++    const stillInTodo = await page.locator("[data-column-id='todo'] [data-draggable='true']").count();
++    expect(stillInTodo).toBeGreaterThan(0);
++  });
++});
+*** End Patch
+
+

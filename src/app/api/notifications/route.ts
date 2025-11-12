@@ -2,300 +2,102 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { notifications } from '@/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
+import { getUserFromRequest, isAdmin } from '../_lib/auth';
 
+// --- GET Request Handler (Fetch notifications for current user) ---
 export async function GET(request: NextRequest) {
   try {
+    const user = getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
-    const id = searchParams.get('id');
-
-    // Single notification by ID
-    if (id) {
-      if (!id || isNaN(parseInt(id))) {
-        return NextResponse.json(
-          { error: 'Valid ID is required', code: 'INVALID_ID' },
-          { status: 400 }
-        );
-      }
-
-      const notification = await db
-        .select()
-        .from(notifications)
-        .where(eq(notifications.id, parseInt(id)))
-        .limit(1);
-
-      if (notification.length === 0) {
-        return NextResponse.json(
-          { error: 'Notification not found', code: 'NOT_FOUND' },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json(notification[0], { status: 200 });
-    }
-
-    // List notifications with filters and pagination
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '10'), 100);
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 100);
     const offset = parseInt(searchParams.get('offset') ?? '0');
-    const userId = searchParams.get('userId');
-    const readParam = searchParams.get('read');
+    const read = searchParams.get('read');
 
-    let query = db.select().from(notifications);
+    const conditions: any[] = [eq(notifications.userId, user.id)];
 
-    // Build filter conditions
-    const conditions = [];
-    
-    if (userId) {
-      if (isNaN(parseInt(userId))) {
-        return NextResponse.json(
-          { error: 'Valid userId is required', code: 'INVALID_USER_ID' },
-          { status: 400 }
-        );
-      }
-      conditions.push(eq(notifications.userId, parseInt(userId)));
+    // Filter by read status if provided
+    if (read !== null) {
+      const isRead = read === 'true';
+      conditions.push(eq(notifications.read, isRead));
     }
 
-    if (readParam !== null) {
-      const readValue = readParam === 'true' || readParam === '1';
-      conditions.push(eq(notifications.read, readValue));
-    }
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
-
-    const results = await query
-      .orderBy(desc(notifications.createdAt))
+    const notificationsList = await db
+      .select()
+      .from(notifications)
+      .where(and(...conditions))
       .limit(limit)
-      .offset(offset);
+      .offset(offset)
+      .orderBy(desc(notifications.createdAt));
 
-    return NextResponse.json(results, { status: 200 });
+    return NextResponse.json({ data: notificationsList }, { status: 200 });
   } catch (error) {
     console.error('GET error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
+// --- POST Request Handler (Create notification - admin only) ---
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, type, title, message, read, metadata } = body;
+    const user = getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    // Validate required fields
-    if (!userId) {
+    // Only admin can create notifications
+    if (!isAdmin(user)) {
       return NextResponse.json(
-        { error: 'userId is required', code: 'MISSING_USER_ID' },
+        { error: 'Only admins can create notifications' },
+        { status: 403 }
+      );
+    }
+
+    const { userId, type, title, message, metadata } = await request.json();
+
+    if (!userId || !type || !title || !message) {
+      return NextResponse.json(
+        { error: 'Missing required fields: userId, type, title, message' },
         { status: 400 }
       );
     }
 
-    if (isNaN(parseInt(userId))) {
-      return NextResponse.json(
-        { error: 'userId must be a valid integer', code: 'INVALID_USER_ID' },
-        { status: 400 }
-      );
-    }
+    const createdAt = new Date().toISOString();
 
-    if (!type || typeof type !== 'string' || type.trim() === '') {
-      return NextResponse.json(
-        { error: 'type is required', code: 'MISSING_TYPE' },
-        { status: 400 }
-      );
-    }
-
-    if (!title || typeof title !== 'string' || title.trim() === '') {
-      return NextResponse.json(
-        { error: 'title is required', code: 'MISSING_TITLE' },
-        { status: 400 }
-      );
-    }
-
-    if (!message || typeof message !== 'string' || message.trim() === '') {
-      return NextResponse.json(
-        { error: 'message is required', code: 'MISSING_MESSAGE' },
-        { status: 400 }
-      );
-    }
-
-    // Validate metadata if provided
-    if (metadata !== undefined && metadata !== null) {
-      if (typeof metadata === 'string') {
-        try {
-          JSON.parse(metadata);
-        } catch {
-          return NextResponse.json(
-            { error: 'metadata must be valid JSON', code: 'INVALID_METADATA' },
-            { status: 400 }
-          );
-        }
-      } else if (typeof metadata !== 'object') {
-        return NextResponse.json(
-          { error: 'metadata must be valid JSON', code: 'INVALID_METADATA' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Prepare data for insertion
-    const notificationData: any = {
-      userId: parseInt(userId),
-      type: type.trim(),
-      title: title.trim(),
-      message: message.trim(),
-      read: read === true || read === 1 ? true : false,
-      createdAt: new Date().toISOString(),
-    };
-
-    if (metadata !== undefined && metadata !== null) {
-      notificationData.metadata = typeof metadata === 'string' 
-        ? JSON.parse(metadata) 
-        : metadata;
-    }
-
-    const newNotification = await db
+    const inserted = await db
       .insert(notifications)
-      .values(notificationData)
+      .values({
+        createdAt,
+        title,
+        userId,
+        message,
+        type,
+        read: false,
+        metadata: metadata || null,
+      })
       .returning();
 
-    return NextResponse.json(newNotification[0], { status: 201 });
+    return NextResponse.json({ data: inserted[0] }, { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-export async function PUT(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const id = searchParams.get('id');
-
-    if (!id || isNaN(parseInt(id))) {
-      return NextResponse.json(
-        { error: 'Valid ID is required', code: 'INVALID_ID' },
-        { status: 400 }
-      );
-    }
-
-    // Check if notification exists
-    const existing = await db
-      .select()
-      .from(notifications)
-      .where(eq(notifications.id, parseInt(id)))
-      .limit(1);
-
-    if (existing.length === 0) {
-      return NextResponse.json(
-        { error: 'Notification not found', code: 'NOT_FOUND' },
-        { status: 404 }
-      );
-    }
-
-    const body = await request.json();
-    const { userId, type, title, message, read, metadata } = body;
-
-    // Validate fields if provided
-    if (userId !== undefined) {
-      if (isNaN(parseInt(userId))) {
-        return NextResponse.json(
-          { error: 'userId must be a valid integer', code: 'INVALID_USER_ID' },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (type !== undefined && (typeof type !== 'string' || type.trim() === '')) {
-      return NextResponse.json(
-        { error: 'type must be a non-empty string', code: 'INVALID_TYPE' },
-        { status: 400 }
-      );
-    }
-
-    if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
-      return NextResponse.json(
-        { error: 'title must be a non-empty string', code: 'INVALID_TITLE' },
-        { status: 400 }
-      );
-    }
-
-    if (message !== undefined && (typeof message !== 'string' || message.trim() === '')) {
-      return NextResponse.json(
-        { error: 'message must be a non-empty string', code: 'INVALID_MESSAGE' },
-        { status: 400 }
-      );
-    }
-
-    if (metadata !== undefined && metadata !== null) {
-      if (typeof metadata === 'string') {
-        try {
-          JSON.parse(metadata);
-        } catch {
-          return NextResponse.json(
-            { error: 'metadata must be valid JSON', code: 'INVALID_METADATA' },
-            { status: 400 }
-          );
-        }
-      } else if (typeof metadata !== 'object') {
-        return NextResponse.json(
-          { error: 'metadata must be valid JSON', code: 'INVALID_METADATA' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Prepare update data
-    const updateData: any = {};
-
-    if (userId !== undefined) {
-      updateData.userId = parseInt(userId);
-    }
-    if (type !== undefined) {
-      updateData.type = type.trim();
-    }
-    if (title !== undefined) {
-      updateData.title = title.trim();
-    }
-    if (message !== undefined) {
-      updateData.message = message.trim();
-    }
-    if (read !== undefined) {
-      updateData.read = read === true || read === 1 ? true : false;
-    }
-    if (metadata !== undefined) {
-      if (metadata === null) {
-        updateData.metadata = null;
-      } else {
-        updateData.metadata = typeof metadata === 'string' 
-          ? JSON.parse(metadata) 
-          : metadata;
-      }
-    }
-
-    const updated = await db
-      .update(notifications)
-      .set(updateData)
-      .where(eq(notifications.id, parseInt(id)))
-      .returning();
-
-    return NextResponse.json(updated[0], { status: 200 });
-  } catch (error) {
-    console.error('PUT error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
-      { status: 500 }
-    );
-  }
-}
-
+// --- PATCH Request Handler (Update an existing notification) ---
 export async function PATCH(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
-    const readParam = searchParams.get('read');
 
     if (!id || isNaN(parseInt(id))) {
       return NextResponse.json(
@@ -303,6 +105,8 @@ export async function PATCH(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const updates = await request.json();
 
     // Check if notification exists
     const existing = await db
@@ -318,12 +122,24 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Determine read value
-    const readValue = readParam === 'true' || readParam === '1' ? true : false;
+    // Only allow specific updates
+    const safeUpdates: any = {};
+    if (updates.read !== undefined) safeUpdates.read = !!updates.read;
+    if (updates.title) safeUpdates.title = updates.title;
+    if (updates.message) safeUpdates.message = updates.message;
+    if (updates.type) safeUpdates.type = updates.type;
+    if (updates.metadata) safeUpdates.metadata = updates.metadata;
+
+    if (Object.keys(safeUpdates).length === 0) {
+      return NextResponse.json(
+        { error: 'No valid fields provided for update', code: 'NO_VALID_FIELDS' },
+        { status: 400 }
+      );
+    }
 
     const updated = await db
       .update(notifications)
-      .set({ read: readValue })
+      .set({ ...safeUpdates, updatedAt: new Date().toISOString() })
       .where(eq(notifications.id, parseInt(id)))
       .returning();
 
@@ -337,6 +153,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+// --- DELETE Request Handler (Delete an existing notification) ---
 export async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -371,7 +188,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(
       {
         message: 'Notification deleted successfully',
-        notification: deleted[0],
+        deleted: deleted[0],
       },
       { status: 200 }
     );

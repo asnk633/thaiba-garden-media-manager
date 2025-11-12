@@ -42,9 +42,11 @@ export const events = sqliteTable('events', {
   description: text('description'),
   startTime: text('start_time').notNull(),
   endTime: text('end_time').notNull(),
+  approvalStatus: text('approval_status').notNull().default('pending'), // 'pending', 'approved', 'declined'
   createdById: integer('created_by_id').notNull().references(() => users.id),
   institutionId: integer('institution_id').notNull().references(() => institutions.id),
   createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 });
 
 // Notifications table
@@ -69,7 +71,28 @@ export const attendance = sqliteTable('attendance', {
   createdAt: text('created_at').notNull(),
 });
 
-// Files table
+// Task comments table
+export const taskComments = sqliteTable('task_comments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  comment: text('comment').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+// Attachments table (for tasks)
+export const attachments = sqliteTable('attachments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  fileName: text('file_name').notNull(),
+  fileUrl: text('file_url').notNull(),
+  fileType: text('file_type').notNull(),
+  fileSize: integer('file_size').notNull(),
+  uploadedById: integer('uploaded_by_id').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull(),
+});
+
+// Files table (general file hub)
 export const files = sqliteTable('files', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -82,3 +105,4 @@ export const files = sqliteTable('files', {
   institutionId: integer('institution_id').notNull().references(() => institutions.id),
   createdAt: text('created_at').notNull(),
 });
+

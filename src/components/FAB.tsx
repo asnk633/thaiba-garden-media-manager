@@ -35,8 +35,11 @@ export function FAB() {
         />
       )}
 
-      {/* FAB Menu */}
-      <div className="fixed bottom-20 right-4 z-50 md:bottom-6 md:right-6">
+      {/* FAB Menu (centered over BottomNav) */}
+      <div
+        className="fixed left-1/2 transform -translate-x-1/2 z-50"
+        style={{ bottom: "calc(var(--bottom-nav-height, 22px) + 2rem)" }}
+      >
         <div
           className={cn(
             'flex flex-col-reverse gap-3 mb-3 transition-all duration-200',
@@ -67,14 +70,17 @@ export function FAB() {
           )}
         </div>
 
-        {/* Main FAB Button */}
+        {/* Main FAB Button (visual: purple circular CTA) */}
         <Button
           onClick={() => setIsOpen(!isOpen)}
-          size="icon"
+          // remove size prop so className controls actual size
           className={cn(
-            'h-14 w-14 rounded-full shadow-lg transition-transform',
+            'h-14 w-14 rounded-full shadow-2xl transition-transform flex items-center justify-center',
+            'bg-gradient-to-b from-purple-600 to-purple-500 text-white',
+            'focus:outline-none focus-visible:ring-4 focus-visible:ring-purple-300',
             isOpen && 'rotate-45'
           )}
+          aria-label={isOpen ? "Close create menu" : "Open create menu"}
         >
           {isOpen ? (
             <X className="h-6 w-6" />

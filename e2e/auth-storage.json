@@ -1,0 +1,7 @@
+{
+  "origins": [],
+  "cookies": [],
+  "localStorage": [
+    { "name": "user", "value": "{\"id\":2,\"email\":\"team@test.com\",\"fullName\":\"Team Member\",\"role\":\"team\",\"institutionId\":1}", "url": "http://localhost:3000" }
+  ]
+}

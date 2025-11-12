@@ -1,45 +1,39 @@
-import type { Metadata } from "next";
-import "./globals.css";
-// removed VisualEditsMessenger import (dev-only)
-import ErrorReporter from "@/components/ErrorReporter";
-import Script from "next/script";
+// src/app/layout.tsx
+"use client";
+
+import React from "react";
+import BottomNav from "@/components/BottomNav";
+import { FAB } from "@/components/FAB";
+import { ToastProvider } from "@/components/ToastProvider";
+import { ClientDataProvider } from "@/app/(shell)/ClientDataContext";
+import { RoleProvider } from "@/app/(shell)/RoleContext";
+// 🎯 Import the AuthProvider from the correct path
 import { AuthProvider } from "@/contexts/AuthContext";
-import { ThemeProvider } from "@/contexts/ThemeContext";
-import { Toaster } from "@/components/ui/sonner";
-import { AppLayout } from "@/components/AppLayout";
 
-export const metadata: Metadata = {
-  title: "Thaiba Garden Media Manager",
-  description: "Manage your media projects with ease",
-};
+// 🎯 Ensure globals.css is imported here
+import './globals.css';
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">
-        <ThemeProvider>
-          <AuthProvider>
-            <ErrorReporter />
-            <Script
-              src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/scripts//route-messenger.js"
-              strategy="afterInteractive"
-              data-target-origin="*"
-              data-message-type="ROUTE_CHANGE"
-              data-include-search-params="true"
-              data-only-in-iframe="true"
-              data-debug="true"
-              data-custom-data='{"appName": "YourApp", "version": "1.0.0", "greeting": "hi"}'
-            />
-            <AppLayout>{children}</AppLayout>
-            <Toaster />
-            {/* VisualEditsMessenger removed — it was a dev-only helper not present locally */}
-          </AuthProvider>
-        </ThemeProvider>
-      </body>
-    </html>
+    // 🎯 Wrap all other providers with AuthProvider
+    <AuthProvider>
+      <RoleProvider>
+        <ToastProvider>
+          <ClientDataProvider>
+            <html lang="en">
+              <body className="min-h-screen">
+                <main className="pb-24 pt-4">{children}</main>
+
+                {/* Put FAB here so it's centered above the BottomNav */}
+                <FAB />
+
+                {/* Bottom navigation remains single-source-of-truth */}
+                <BottomNav isAdmin={true} canCreateEvent={true} />
+              </body>
+            </html>
+          </ClientDataProvider>
+        </ToastProvider>
+      </RoleProvider>
+    </AuthProvider>
   );
 }

@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:3000",
+      "localStorage": [
+        {
+          "name": "user",
+          "value": "{\"id\":3,\"email\":\"john@thaiba.com\",\"fullName\":\"John Doe\",\"avatarUrl\":null,\"role\":\"team\",\"institutionId\":1}"
+        }
+      ]
+    }
+  ]
+}

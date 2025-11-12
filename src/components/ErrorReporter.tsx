@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 type ReporterProps = {
-  /*  ⎯⎯ props are only provided on the global-error page ⎯⎯ */
+  /* ⎯⎯ props are only provided on the global-error page ⎯⎯ */
   error?: Error & { digest?: string };
   reset?: () => void;
 };
@@ -11,7 +11,7 @@ type ReporterProps = {
 export default function ErrorReporter({ error, reset }: ReporterProps) {
   /* ─ instrumentation shared by every route ─ */
   const lastOverlayMsg = useRef("");
-  const pollRef = useRef<NodeJS.Timeout>();
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const inIframe = window.parent !== window;
@@ -44,57 +44,52 @@ export default function ErrorReporter({ error, reset }: ReporterProps) {
         timestamp: Date.now(),
       });
 
-    const pollOverlay = () => {
-      const overlay = document.querySelector("[data-nextjs-dialog-overlay]");
-      const node =
-        overlay?.querySelector(
-          "h1, h2, .error-message, [data-nextjs-dialog-body]"
-        ) ?? null;
-      const txt = node?.textContent ?? node?.innerHTML ?? "";
-      if (txt && txt !== lastOverlayMsg.current) {
-        lastOverlayMsg.current = txt;
+    // Capture hydration errors via a MutationObserver
+    const captureHydrationError = () => {
+      const errorMsg =
+        document.querySelector(".error-reporter-overlay")?.textContent;
+      if (errorMsg && errorMsg !== lastOverlayMsg.current) {
+        lastOverlayMsg.current = errorMsg;
         send({
           type: "ERROR_CAPTURED",
-          error: { message: txt, source: "nextjs-dev-overlay" },
+          error: {
+            message: errorMsg,
+            stack: "Hydration error captured via MutationObserver.",
+            source: "hydration_observer",
+          },
           timestamp: Date.now(),
         });
       }
     };
 
+    // Global listeners
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onReject);
-    pollRef.current = setInterval(pollOverlay, 1000);
+
+    // MutationObserver to catch hydration errors after render
+    const observer = new MutationObserver(captureHydrationError);
+    observer.observe(document.body, { subtree: true, childList: true });
+
+    // Polling interval to check for messages if the observer misses something
+    // Clear existing ref if present
+    if (pollRef.current) {
+        clearInterval(pollRef.current);
+    }
+
+    // Assign new interval to ref
+    pollRef.current = setInterval(captureHydrationError, 1000);
 
     return () => {
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onReject);
-      pollRef.current && clearInterval(pollRef.current);
+      observer.disconnect();
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+      }
     };
   }, []);
 
-  /* ─ extra postMessage when on the global-error route ─ */
-  useEffect(() => {
-    if (!error) return;
-    window.parent.postMessage(
-      {
-        type: "global-error-reset",
-        error: {
-          message: error.message,
-          stack: error.stack,
-          digest: error.digest,
-          name: error.name,
-        },
-        timestamp: Date.now(),
-        userAgent: navigator.userAgent,
-      },
-      "*"
-    );
-  }, [error]);
-
-  /* ─ ordinary pages render nothing ─ */
-  if (!error) return null;
-
-  /* ─ global-error UI ─ */
+  /* ─ Render the error UI ─ */
   return (
     <html>
       <body className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
@@ -114,13 +109,13 @@ export default function ErrorReporter({ error, reset }: ReporterProps) {
                   Error details
                 </summary>
                 <pre className="mt-2 text-xs bg-muted p-2 rounded overflow-auto">
-                  {error.message}
-                  {error.stack && (
+                  {error?.message}
+                  {error?.stack && (
                     <div className="mt-2 text-muted-foreground">
                       {error.stack}
                     </div>
                   )}
-                  {error.digest && (
+                  {error?.digest && (
                     <div className="mt-2 text-muted-foreground">
                       Digest: {error.digest}
                     </div>

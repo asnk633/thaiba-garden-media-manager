@@ -1,0 +1,74 @@
+*** Begin Patch
+*** Add File: fix-client-auth-dev-seed.patch
+*** End Patch
+*** Begin File: src/app/(shell)/ClientDataContext.tsx
+*** Update File: src/app/(shell)/ClientDataContext.tsx
+@@
+ import React, { createContext, useState, useEffect, useCallback } from "react";
+-import type { User, Store } from "@/types";
++import type { User, Store } from "@/types";
+@@
+ export const ClientDataProvider = ({ children }: { children: React.ReactNode }) => {
+-  const [user, setUser] = useState<User | null>(null);
++  const [user, setUser] = useState<User | null>(null);
+   const [tasks, setTasks] = useState<TaskLite[]>([]);
+   // ... rest of existing state/logic
+-
+-  useEffect(() => {
+-    // existing initialization...
+-  }, []);
++  useEffect(() => {
++    // === Existing provider initialization should remain here ===
++    // (If file already had initialization logic it continues below.)
++
++    // DEV HELPERS: only run on client and only in non-production
++    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
++      try {
++        // 1) Auto-seed a dev user into localStorage if none exists.
++        const existing = localStorage.getItem("user");
++        if (!existing) {
++          const devUser: User = {
++            id: 1,
++            email: "admin@thaiba.com",
++            fullName: "Admin User",
++            avatarUrl: null,
++            role: "admin",
++            institutionId: 1,
++            createdAt: new Date().toISOString(),
++            updatedAt: new Date().toISOString(),
++          } as unknown as User;
++          localStorage.setItem("user", JSON.stringify(devUser));
++          setUser(devUser);
++        } else {
++          try { setUser(JSON.parse(existing)); } catch { /* ignore */ }
++        }
++
++        // 2) Install a small fetch wrapper that attaches x-user-data to every request
++        // so API routes that expect this header receive the identity (dev only).
++        // We wrap only once; guard with a symbol on window.
++        const FETCH_WRAPPER_KEY = "__TGMM_FETCH_WRAPPER_INSTALLED__";
++        if ((window as any)[FETCH_WRAPPER_KEY] !== true) {
++          const origFetch = window.fetch.bind(window);
++          window.fetch = async (input: RequestInfo, init?: RequestInit) => {
++            try {
++              const stored = localStorage.getItem("user");
++              if (stored) {
++                // ensure headers exist and include the x-user-data header
++                const headers = new Headers(init?.headers as HeadersInit | undefined);
++                if (!headers.get("x-user-data")) headers.set("x-user-data", stored);
++                init = { ...(init || {}), headers };
++              }
++            } catch (err) {
++              // noop - never fail the request because of wrapper
++            }
++            return origFetch(input, init);
++          };
++          (window as any)[FETCH_WRAPPER_KEY] = true;
++        }
++      } catch (err) {
++        // swallow errors - dev helper should never break app
++        // console.debug("dev-seed/fetch wrapper init failed", err);
++      }
++    }
++  }, []);
+*** End File

@@ -1,0 +1,152 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/db';
+import { tasks } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { getUserFromRequest, canModify, isAdmin } from '../../_lib/auth';
+import { TaskStatus, TaskPriority } from '@/types';
+
+/**
+ * GET /api/tasks/[id]
+ * Get single task details
+ */
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = getUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+    const taskId = parseInt(id, 10);
+
+    const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+
+    if (!task) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Check institution access
+    if (task.institutionId !== user.institutionId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    return NextResponse.json({ data: task }, { status: 200 });
+  } catch (error) {
+    console.error('[GET /api/tasks/[id]]', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch task' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/tasks/[id]
+ * Update task with role-based field restrictions
+ */
+export async function PATCH(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = getUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+    const taskId = parseInt(id, 10);
+
+    const [existingTask] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+
+    if (!existingTask) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Check permission
+    if (!canModify(user, existingTask.createdById)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const delta = await req.json();
+    const now = new Date().toISOString();
+
+    // Build update object based on role
+    const updates: any = {
+      updatedAt: now,
+    };
+
+    // Fields anyone can update
+    if (delta.title !== undefined) updates.title = delta.title;
+    if (delta.description !== undefined) updates.description = delta.description;
+    if (delta.dueDate !== undefined) updates.dueDate = delta.dueDate;
+
+    // Fields only team/admin can update
+    if (user.role !== 'guest') {
+      if (delta.priority !== undefined) updates.priority = delta.priority as TaskPriority;
+      if (delta.assignedToId !== undefined) updates.assignedToId = delta.assignedToId;
+    }
+
+    // Fields only admin can update
+    if (isAdmin(user)) {
+      if (delta.status !== undefined) updates.status = delta.status as TaskStatus;
+    }
+
+    const [updated] = await db
+      .update(tasks)
+      .set(updates)
+      .where(eq(tasks.id, taskId))
+      .returning();
+
+    return NextResponse.json({ data: updated }, { status: 200 });
+  } catch (error) {
+    console.error('[PATCH /api/tasks/[id]]', error);
+    return NextResponse.json(
+      { error: 'Failed to update task' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/tasks/[id]
+ * Delete task (admin or creator only)
+ */
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = getUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+    const taskId = parseInt(id, 10);
+
+    const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+
+    if (!task) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Only admin or creator can delete
+    if (!canModify(user, task.createdById)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    await db.delete(tasks).where(eq(tasks.id, taskId));
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    console.error('[DELETE /api/tasks/[id]]', error);
+    return NextResponse.json(
+      { error: 'Failed to delete task' },
+      { status: 500 }
+    );
+  }
+}
