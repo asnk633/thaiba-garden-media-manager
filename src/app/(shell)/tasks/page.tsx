@@ -1,258 +1,252 @@
 "use client";
+import React, { useEffect, useState } from "react";
 
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import ConfirmDialog from "@/components/ConfirmDialog";
-import { useClientData } from "@/app/(shell)/ClientDataContext";
-import useDebouncedValue from "@/hooks/useDebouncedValue";
-import { useRole } from "@/app/(shell)/RoleContext";
+type Task = {
+  id: number;
+  title: string;
+  description?: string | null;
+  status?: string;
+  priority?: string;
+  reviewStatus?: string | null;
+  createdAt?: string;
+};
 
-type Tab = "Mine" | "Team" | "All" | "Review";
+// Minimal in-file toast so UI gives immediate feedback even if project toast isn't available.
+function useToast() {
+  const [messages, setMessages] = useState<
+    { id: number; text: string; type?: "info" | "success" | "error" }[]
+  >([]);
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const timers = messages.map((m) =>
+      setTimeout(() => {
+        setMessages((prev) => prev.filter((x) => x.id !== m.id));
+      }, 3500)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [messages]);
+  const push = (text: string, type: "info" | "success" | "error" = "info") =>
+    setMessages((prev) => [...prev, { id: Date.now() + Math.random(), text, type }]);
+  const ToastUI = () => (
+    <div aria-live="polite" style={{ position: "fixed", top: 12, right: 12, zIndex: 9999 }}>
+      {messages.map((m) => (
+        <div
+          key={m.id}
+          style={{
+            marginBottom: 8,
+            padding: "10px 14px",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+            background: m.type === "error" ? "#ffdddd" : m.type === "success" ? "#ddffdf" : "#ffffff",
+            color: "#111",
+            minWidth: 200,
+            fontSize: 13,
+          }}
+        >
+          {m.text}
+        </div>
+      ))}
+    </div>
+  );
+  return { push, ToastUI };
+}
 
 export default function TasksPage() {
-  const { tasks, deleteTask, updateTask } = useClientData();
-  const { user } = useRole();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const { push, ToastUI } = useToast();
+  const [filter, setFilter] = useState<"all" | "mine" | "team" | "review">("all");
+  const [search, setSearch] = useState("");
 
-  const [q, setQ] = useState("");
-  const dq = useDebouncedValue(q, 220);
-
-  const tabs: Tab[] = user.role === "admin" ? ["Mine", "Team", "All", "Review"] : ["Mine", "Team", "All"];
-  const [tab, setTab] = useState<Tab>(tabs[0]);
-
-  // Bulk selection (Review tab only)
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-
-  const filtered = useMemo(() => {
-    let list = tasks;
-
-    // Tab filter
-    if (tab === "Mine") list = list.filter(t => (t.assignedTo ?? "").toLowerCase() === user.name.toLowerCase());
-    if (tab === "Team") list = list.filter(t => t.reviewStatus !== "pending_review"); // hide guest submissions
-    if (tab === "Review") list = list.filter(t => t.reviewStatus === "pending_review");
-
-    // Search
-    const term = dq.trim().toLowerCase();
-    if (term) {
-      list = list.filter(t =>
-        (t.title?.toLowerCase().includes(term) ?? false) ||
-        (t.assignedTo?.toLowerCase().includes(term) ?? false)
-      );
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      setLoading(true);
+      try {
+        // adjust query params as your app expects
+        const q = new URLSearchParams({ institutionId: "1", limit: "500" });
+        const res = await fetch(`/api/tasks?${q.toString()}`);
+        if (!mounted) return;
+        if (!res.ok) {
+          const txt = await res.text();
+          console.error("/api/tasks failed", res.status, txt);
+          push("Failed to load tasks", "error");
+          setTasks([]);
+        } else {
+          const json = await res.json();
+          // API returns { data: Task[] }
+          setTasks(Array.isArray(json?.data) ? json.data : []);
+        }
+      } catch (err) {
+        console.error("Failed fetching tasks", err);
+        push("Failed to load tasks", "error");
+      } finally {
+        setLoading(false);
+      }
     }
-    return list;
-  }, [tasks, dq, tab, user.name]);
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  // Delete dialog
-  const [toDeleteId, setToDeleteId] = useState<string | null>(null);
-  const confirmDelete = async () => {
-    if (!toDeleteId) return;
-    const ok = await deleteTask(toDeleteId);
-    if (!ok) alert("Couldn’t delete the task. Please try again.");
-    setToDeleteId(null);
-  };
+  function visibleTasks() {
+    const term = search.trim().toLowerCase();
+    return tasks.filter((t) => {
+      if (filter === "mine") {
+        // If you have user context, refine this. For now show all.
+      } else if (filter === "team") {
+        // placeholder
+      } else if (filter === "review") {
+        // show only tasks that have reviewStatus maybe pending/...
+        // but keep flexible: show all for now unless you want strict filtering
+      }
+      if (!term) return true;
+      return (
+        (t.title || "").toLowerCase().includes(term) ||
+        (t.description || "").toLowerCase().includes(term)
+      );
+    });
+  }
 
-  // Review actions
-  const approve = async (id: string) => updateTask(id, { reviewStatus: "approved" });
-  const reject  = async (id: string) => updateTask(id, { reviewStatus: "rejected" });
-  const reopen  = async (id: string) => updateTask(id, { reviewStatus: "pending_review" });
-
-  // Bulk helpers (Review tab)
-  const approveSelected = async () => {
-    const ids = Object.keys(selected).filter(k => selected[k]);
-    for (const id of ids) await approve(id);
-    setSelected({});
-  };
-  const rejectSelected = async () => {
-    const ids = Object.keys(selected).filter(k => selected[k]);
-    for (const id of ids) await reject(id);
-    setSelected({});
-  };
-  const allChecked = filtered.length > 0 && filtered.every((t) => selected[t.id]);
-  const toggleAll = () => {
-    const next: Record<string, boolean> = {};
-    if (!allChecked) filtered.forEach(t => (next[t.id] = true));
-    setSelected(next);
-  };
-
-  // Reset selection if leaving Review tab
-  const onTabChange = (t: Tab) => {
-    setTab(t);
-    if (t !== "Review") setSelected({});
-  };
+  async function saveReview(taskId: number, nextValue: string) {
+    // value must be exactly one of backend values: "pending", "approved", "rejected"
+    const canonical = String(nextValue).toLowerCase();
+    if (!["pending", "approved", "rejected"].includes(canonical)) {
+      push("Invalid review status", "error");
+      return;
+    }
+    setSaving((s) => ({ ...s, [taskId]: true }));
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewStatus: canonical }),
+      });
+      if (!res.ok) {
+        console.error("PATCH failed", res.status);
+        push("Failed to update reviewStatus", "error");
+        return;
+      }
+      // success: update local copy
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, reviewStatus: canonical } : t)));
+      push("Review status updated", "success");
+    } catch (err) {
+      console.error("Patch error", err);
+      push("Failed to update reviewStatus", "error");
+    } finally {
+      setSaving((s) => ({ ...s, [taskId]: false }));
+    }
+  }
 
   return (
-    <div className="px-4 pb-28">
-      {/* Search */}
-      <div className="py-3">
-        <label className="flex h-12 w-full">
-          <div className="flex items-center justify-center rounded-l-xl bg-[#224944] px-4 text-[#90cbc3]">
-            <span className="material-symbols-outlined">search</span>
-          </div>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by title or assignee…"
-            className="h-12 w-full rounded-r-xl bg-[#224944] px-4 text-white placeholder:text-[#90cbc3] focus:outline-none"
-          />
-        </label>
-      </div>
+    <div style={{ padding: 28 }}>
+      <ToastUI />
+      <h1 style={{ fontSize: 28, marginBottom: 18 }}>Task Review Dashboard</h1>
 
-      {/* Tabs */}
-      <div className="mb-3 flex gap-3 overflow-x-auto pb-1">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => onTabChange(t)}
-            className={`h-9 shrink-0 rounded-full px-4 text-sm ${
-              tab === t ? "bg-[#00BFA6] text-black font-semibold" : "bg-[#224944] text-white/90"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* Admin Review bulk toolbar */}
-      {user.role === "admin" && tab === "Review" && filtered.length > 0 && (
-        <div className="sticky top-[52px] z-30 mb-3 flex items-center justify-between rounded-xl bg-[#173532] p-3 text-sm shadow-lg">
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={allChecked}
-                onChange={toggleAll}
-                className="size-4 accent-[#00BFA6]"
-              />
-              <span className="text-white/90">Select all</span>
-            </label>
-            <span className="text-white/60">
-              {Object.values(selected).filter(Boolean).length} selected
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
+      <div style={{ maxWidth: 920, marginBottom: 12 }}>
+        <input
+          aria-label="Search tasks"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by title or assignee..."
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(255,255,255,0.02)",
+            color: "white",
+            marginBottom: 12,
+          }}
+        />
+        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+          {(["mine", "team", "all", "review"] as const).map((v) => (
             <button
-              onClick={approveSelected}
-              className="rounded-md bg-emerald-500/20 px-3 py-1.5 font-medium text-emerald-300 hover:bg-emerald-500/30"
+              key={v}
+              onClick={() => setFilter(v)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "none",
+                background: filter === v ? "#0f8" : "rgba(255,255,255,0.04)",
+                color: filter === v ? "#003" : "#ddd",
+                cursor: "pointer",
+              }}
             >
-              Approve selected
+              {v[0].toUpperCase() + v.slice(1)}
             </button>
-            <button
-              onClick={rejectSelected}
-              className="rounded-md bg-red-500/20 px-3 py-1.5 font-medium text-red-300 hover:bg-red-500/30"
-            >
-              Reject selected
-            </button>
-          </div>
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* List */}
-      <div className="flex flex-col gap-4">
-        {filtered.map((t) => {
-          const inReview = t.reviewStatus === "pending_review";
-          const isRejected = t.reviewStatus === "rejected";
-          const checked = !!selected[t.id];
-          return (
-            <div key={t.id} className="rounded-xl bg-[#224944]/40 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex flex-1 items-start gap-3 pr-3">
-                  {user.role === "admin" && tab === "Review" && (
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => setSelected((s) => ({ ...s, [t.id]: !checked }))}
-                      className="mt-1 size-4 accent-[#00BFA6]"
-                    />
-                  )}
-                  <Link href={`/tasks/${t.id}`} className="block flex-1">
-                    <p className="text-white text-base font-medium">{t.title}</p>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <p className="text-[#90cbc3] text-sm">
-                        Due: {t.dueAt ? new Date(t.dueAt).toLocaleString() : "—"}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        {/* Priority color */}
-                        <span
-                          className={`material-symbols-outlined text-base ${
-                            t.priority === "urgent" ? "text-red-600" :
-                            t.priority === "high"   ? "text-red-400" :
-                            t.priority === "medium" ? "text-yellow-300" : "text-white/40"
-                          }`}
-                          title={`Priority: ${t.priority ?? "medium"}`}
-                        >
-                          priority_high
-                        </span>
-                        <span className="rounded-md bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300">
-                          {t.status ?? "Pending"}
-                        </span>
-                      </div>
-                    </div>
-                    {(t.assignedTo || t.reviewStatus) && (
-                      <p className="mt-1 text-xs text-white/60">
-                        {t.assignedTo ? `Assigned to: ${t.assignedTo}` : ""}
-                        {t.assignedTo && t.reviewStatus ? " • " : ""}
-                        {t.reviewStatus === "pending_review" && <span className="text-yellow-300">Pending review</span>}
-                        {t.reviewStatus === "rejected" && <span className="text-red-400">Rejected</span>}
-                      </p>
-                    )}
-                  </Link>
-                </div>
+      <div style={{ maxWidth: 920 }}>
+        {loading && <div>Loading tasks…</div>}
+        {!loading && visibleTasks().length === 0 && <div style={{ opacity: 0.7 }}>No tasks here.</div>}
 
-                <div className="flex shrink-0 items-center gap-2">
-                  {user.role === "admin" && inReview && (
-                    <>
-                      <button
-                        onClick={() => approve(t.id)}
-                        className="rounded-md bg-emerald-500/20 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-500/30"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => reject(t.id)}
-                        className="rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-300 hover:bg-red-500/30"
-                      >
-                        Reject
-                      </button>
-                    </>
-                  )}
-                  {user.role === "admin" && isRejected && (
-                    <button
-                      onClick={() => reopen(t.id)}
-                      className="rounded-md bg-amber-500/20 px-2 py-1 text-xs text-amber-300 hover:bg-amber-500/30"
-                      title="Move back to review"
-                    >
-                      Reopen
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setToDeleteId(t.id)}
-                    className="grid size-9 place-items-center rounded-md bg白/5 bg-white/5 text-white/80 hover:bg-white/10"
-                    title="Delete Task"
-                    aria-label="Delete Task"
-                  >
-                    <span className="material-symbols-outlined">delete</span>
-                  </button>
-                </div>
+        {visibleTasks().map((task) => (
+          <div
+            key={task.id}
+            style={{
+              borderRadius: 8,
+              padding: 18,
+              background: "rgba(255,255,255,0.02)",
+              marginBottom: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <div style={{ maxWidth: "75%" }}>
+              <h3 style={{ margin: 0, color: "#fff" }}>{task.title}</h3>
+              {task.description ? <div style={{ color: "#bbb" }}>{task.description}</div> : null}
+              <div style={{ marginTop: 10, fontSize: 13, color: "#cfcfcf" }}>
+                Status: <span style={{ color: "#88c" }}>{task.status ?? "todo"}</span> &nbsp; Priority:{" "}
+                <span style={{ color: "#f7b500" }}>{task.priority ?? "medium"}</span>
               </div>
             </div>
-          );
-        })}
 
-        {filtered.length === 0 && (
-          <div className="mt-10 rounded-xl border border-white/10 bg-[#1c1c1c] p-6 text-center text-white/70">
-            No tasks here.
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                aria-label={`Review status for ${task.title}`}
+                value={task.reviewStatus ?? "pending"}
+                onChange={(e) => {
+                  // optimistic update locally
+                  const val = e.target.value.toLowerCase();
+                  setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, reviewStatus: val } : t)));
+                }}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  minWidth: 140,
+                  background: "#fff",
+                }}
+              >
+                {/* exact values backend expects */}
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+
+              <button
+                onClick={() => saveReview(task.id, task.reviewStatus ?? "pending")}
+                disabled={Boolean(saving[task.id])}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  cursor: "pointer",
+                  background: saving[task.id] ? "#888" : "#1b7f1b",
+                  color: "#fff",
+                }}
+              >
+                {saving[task.id] ? "Saving..." : "Save"}
+              </button>
+            </div>
           </div>
-        )}
+        ))}
       </div>
-
-      {/* Confirm delete */}
-      <ConfirmDialog
-        open={!!toDeleteId}
-        title="Delete this task?"
-        message="This will permanently remove the task."
-        confirmText="Delete Task"
-        onConfirm={confirmDelete}
-        onCancel={() => setToDeleteId(null)}
-      />
     </div>
   );
 }
